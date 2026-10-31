@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TradeCal">
+<meta name="theme-color" content="#07090f">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>TradeCal</title>
+<style>
+:root{
+  --bg:#07090f; --card:#121826; --card2:#1a2234; --line:#263049;
+  --text:#eef2fa; --mute:#8a93ab; --dim:#4a5370;
+  --win:#33c27a; --winbg:#1d5a3c; --loss:#ff5a5f; --lossbg:#7a2328;
+  --accent:#4fd1c5; --gold:#f5c35b;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;overflow-x:hidden;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Noto Sans Thai",sans-serif;
+  -webkit-user-select:none;user-select:none}
+body{padding:env(safe-area-inset-top) 0 calc(78px + env(safe-area-inset-bottom))}
+main{padding:10px 14px 0;max-width:640px;margin:0 auto}
+.view{display:none}.view.on{display:block}
+.num{font-variant-numeric:tabular-nums}
+.mute{color:var(--mute)}
+.pos{color:var(--win)}.neg{color:var(--loss)}
+button{font:inherit;color:inherit;cursor:pointer}
+input,textarea,select{font:inherit;color:var(--text);-webkit-user-select:text;user-select:text}
+
+/* header row */
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.top h1{margin:0;font-size:20px;letter-spacing:.3px}
+.top h1 b{color:var(--win)}
+.cur{display:flex;background:var(--card);border-radius:12px;padding:3px}
+.cur button{border:0;background:none;padding:7px 14px;border-radius:9px;font-weight:700;color:var(--mute)}
+.cur button.on{background:var(--win);color:#04130b}
+
+/* segmented */
+.seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#13241b;border-radius:14px;padding:4px;margin-bottom:14px}
+.seg button{border:0;background:none;padding:10px 0;border-radius:11px;font-weight:600;color:#9fb3a8;font-size:15px}
+.seg button.on{background:#6fdc8c;color:#07210f}
+
+.nav{display:flex;align-items:center;justify-content:space-between;margin:6px 4px 14px}
+.nav button{border:0;background:none;font-size:24px;width:40px;height:36px;color:var(--text)}
+.nav .t{font-weight:700;font-size:18px}
+
+.cards{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-bottom:14px}
+.card{background:var(--card);border-radius:18px;padding:16px;min-width:0}
+.card .lbl{color:var(--mute);font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.card .big{font-size:30px;font-weight:700;margin-top:8px;overflow-wrap:anywhere}
+.edit{border:0;background:none;color:var(--accent);font-size:18px;padding:0 2px}
+.bar{height:12px;background:#3a4256;border-radius:8px;overflow:hidden;margin:14px 0 8px}
+.bar i{display:block;height:100%;background:var(--win);border-radius:8px}
+.bar.neg i{background:var(--loss)}
+.goalrow{display:flex;justify-content:space-between;font-size:13px}
+
+.opts{display:flex;justify-content:space-between;align-items:center;margin:4px 4px 10px;gap:8px}
+.pill{border:0;background:none;font-weight:600;font-size:15px;padding:6px 0}
+.pill.acc{color:var(--accent)}
+select.pill{appearance:none;-webkit-appearance:none;background:none;border:0;color:var(--accent);font-weight:600;font-size:15px;max-width:60%;padding:6px 0}
+
+/* month grid */
+.dow,.grid{display:grid;gap:8px}
+.dow{margin-bottom:8px;color:var(--mute);font-size:13px;font-weight:600;text-align:center;letter-spacing:.5px}
+.cell{background:var(--card);border-radius:14px;min-height:74px;padding:8px 2px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;border:2px solid transparent;min-width:0}
+.cell.blank{background:none}
+.cell.w{background:var(--winbg)}
+.cell.l{background:var(--lossbg)}
+.cell.today{border-color:#e8ecf5}
+.cell .d{font-size:14px;color:#c9d0e0;display:flex;gap:3px;align-items:center}
+.cell .v{font-size:14px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;max-width:100%}
+.cell .n{font-size:10px;color:#cfe;opacity:.75}
+.g7 .cell .v{font-size:11px}
+
+/* week list */
+.wk{display:grid;gap:10px}
+.wkrow{display:flex;align-items:center;gap:14px;background:var(--card);border-radius:16px;padding:14px 18px;border:2px solid transparent}
+.wkrow.today{border-color:#e8ecf5}
+.wkrow .dd{text-align:center;width:44px}
+.wkrow .dd b{display:block;font-size:20px}
+.wkrow .dd span{font-size:12px;color:var(--mute)}
+.wkrow .mid{flex:1;color:var(--mute);font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wkrow .v{font-weight:700;font-size:17px}
+
+/* year */
+.yr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.mini{background:var(--card);border-radius:16px;padding:10px 8px;text-align:center;border:0;min-width:0}
+.mini .mn{font-weight:600;color:#c9d0e0;margin-bottom:6px}
+.mini .mg{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;margin-bottom:8px}
+.mini .mg i{aspect-ratio:1;border-radius:3px;background:#20283b}
+.mini .mg i.x{background:none}
+.mini .mg i.w{background:var(--win)}
+.mini .mg i.l{background:var(--loss)}
+.mini .mt{font-size:13px;font-weight:700}
+
+.yrows{display:grid;gap:10px}
+.yrow{display:flex;justify-content:space-between;align-items:center;background:var(--card);border:2px solid var(--line);border-radius:16px;padding:18px;font-size:18px;font-weight:700}
+
+/* day view */
+.back{border:0;background:none;font-size:26px;padding:0 10px 0 0}
+.daytop{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.daytop h2{margin:0;font-size:22px;flex:1;text-align:center;padding-right:36px}
+.tr{background:var(--card);border-radius:16px;padding:14px 16px;margin-bottom:10px}
+.tr .h{display:flex;justify-content:space-between;align-items:center}
+.tr .h .t{font-weight:600}
+.tr .amt{font-size:22px;font-weight:700;margin:6px 0 2px}
+.tr .txt{font-size:14px;color:#c9d0e0;white-space:pre-wrap;margin-top:6px;-webkit-user-select:text;user-select:text}
+.tr .txt b{color:var(--mute);font-weight:600}
+.tr img{display:block;width:100%;border-radius:10px;margin-top:10px;max-height:240px;object-fit:cover}
+.lnk{border:0;background:none;color:var(--accent);font-weight:600;padding:4px 0 4px 12px}
+.lnk.del{color:var(--loss)}
+.btn{width:100%;padding:16px;border-radius:16px;border:0;background:#f2f4f8;color:#0b0f18;font-size:17px;font-weight:600}
+.btn.ghost{background:none;border:1.5px solid var(--line);color:var(--text)}
+.empty{color:var(--mute);line-height:1.6;padding:6px 2px 18px}
+
+/* analytics */
+.sec{background:var(--card);border-radius:20px;padding:18px;margin-bottom:14px}
+.sec h3{margin:0 0 10px;font-size:20px;font-weight:600}
+.kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:15px}
+.kv span:nth-child(odd){color:var(--mute)}
+.kv span:nth-child(even){font-weight:600;text-align:right}
+.donut{display:flex;justify-content:center;margin:16px 0 10px}
+.legend{display:flex;justify-content:center;gap:22px;font-size:14px;color:#c9d0e0}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:4px;margin-right:6px;vertical-align:-2px}
+.center{text-align:center}
+.huge{font-size:32px;font-weight:700}
+.stat3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.stat3 div{background:var(--card2);border-radius:12px;padding:10px;text-align:center}
+.stat3 b{display:block;font-size:20px}
+.stat3 span{font-size:12px;color:var(--mute)}
+svg text{fill:var(--mute);font-size:10px}
+
+/* settings */
+.grp{color:var(--mute);font-size:13px;letter-spacing:1px;margin:18px 6px 8px;font-weight:600}
+.list{background:var(--card);border-radius:18px;overflow:hidden}
+.li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px;border-bottom:1px solid var(--line);font-size:16px;width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left}
+.li:last-child{border-bottom:0}
+.li small{display:block;color:var(--accent);font-size:13px;margin-top:2px}
+.li input[type=number]{width:96px;background:var(--card2);border:0;border-radius:10px;padding:8px;text-align:right}
+.chev{color:var(--mute);font-size:20px}
+.sw{position:relative;width:52px;height:30px;flex:none}
+.sw input{opacity:0;width:0;height:0}
+.sw span{position:absolute;inset:0;background:#3a4256;border-radius:20px;transition:.2s}
+.sw span::before{content:"";position:absolute;width:26px;height:26px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.2s}
+.sw input:checked+span{background:var(--win)}
+.sw input:checked+span::before{transform:translateX(22px)}
+.note{font-size:13px;color:var(--mute);line-height:1.6;margin:10px 6px}
+
+/* bottom tab bar */
+.tabs{position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  background:#151a1f;padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:5}
+.tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--mute);font-size:13px;padding:6px 0;border-radius:16px}
+.tabs button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tabs button.on{color:#fff}
+.tabs button.on svg{background:#2a3036;border-radius:14px;padding:4px 18px;width:62px;height:32px}
+
+/* modal */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;justify-content:center;z-index:20}
+.ov.on{display:flex}
+.sheet{background:var(--card);width:100%;max-width:560px;border-radius:24px 24px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
+.sheet .sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.sheet .sh h3{margin:0;font-size:20px}
+.x{border:0;background:none;font-size:28px;line-height:1;padding:0 4px}
+.pl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-bottom:16px}
+.pl button{padding:14px;border-radius:14px;border:1.5px solid #5a6378;background:none;font-weight:600;color:#c9d0e0}
+.pl button.p.on{border-color:var(--win);color:var(--win);background:#122a1d}
+.pl button.l.on{border-color:var(--loss);color:var(--loss);background:#2a1214}
+.f2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.fld{margin-bottom:14px;min-width:0}
+.fld label{display:block;color:var(--mute);font-size:13px;margin-bottom:6px}
+.fld input,.fld textarea,.fld select{width:100%;background:var(--card2);border:0;border-radius:12px;padding:13px;font-size:16px}
+.fld textarea{min-height:70px;resize:vertical}
+.pick{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--accent);font-weight:600;padding:12px;border:1.5px dashed var(--line);border-radius:12px;margin-bottom:16px}
+.pick input{display:none}
+.prev{position:relative;margin-bottom:16px}
+.prev img{width:100%;border-radius:12px;max-height:220px;object-fit:cover;display:block}
+.prev button{position:absolute;top:6px;right:6px;border:0;background:rgba(0,0,0,.65);border-radius:50%;width:32px;height:32px}
+.full{position:fixed;inset:0;background:#000;z-index:30;display:none;align-items:center;justify-content:center}
+.full.on{display:flex}
+.full img{max-width:100%;max-height:100%}
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#e8ecf5;color:#0b0f18;padding:10px 16px;border-radius:12px;font-weight:600;opacity:0;transition:.25s;z-index:40;pointer-events:none}
+.toast.on{opacity:1}
+@media (max-width:380px){.cell .v{font-size:12px}.card .big{font-size:24px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Trade<b>Cal</b></h1>
+    <div class="cur" id="curSw"><button data-c="THB">฿ THB</button><button data-c="USD">$ USD</button></div>
+  </div>
+
+  <!-- ===== Calendar ===== -->
+  <section class="view on" id="v-cal">
+    <div class="seg" id="seg">
+      <button data-m="week">Week</button><button data-m="month">Month</button><button data-m="year">Year</button><button data-m="all">All time</button>
+    </div>
+    <div id="calBody"></div>
+  </section>
+
+  <!-- ===== Day ===== -->
+  <section class="view" id="v-day"></section>
+
+  <!-- ===== Analytics ===== -->
+  <section class="view" id="v-ana"></section>
+
+  <!-- ===== Settings ===== -->
+  <section class="view" id="v-set"></section>
+</main>
+
+<nav class="tabs" id="tabs">
+  <button data-t="cal" class="on"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4M8 13h2M14 13h2M8 17h2M14 17h2"/></svg>Calendar</button>
+  <button data-t="ana"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/></svg>Analytics</button>
+  <button data-t="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Settings</button>
+</nav>
+
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+<div class="full" id="full"><img id="fullImg" alt=""></div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ---------- state ---------- */
+const KEY = 'tradecal.v1';
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function defState() {
+  return {
+    accounts: [{ id: 'main', name: 'บัญชีหลัก', cur: 'USD' }],
+    acc: 'all',
+    trades: [],
+    goals: {},
+    set: { disp: 'USD', fx: 33, showCount: false, hide: false, weekends: false }
+  };
+}
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY)) || defState(); } catch (e) { S = defState(); }
+S = Object.assign(defState(), S); S.set = Object.assign(defState().set, S.set);
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('บันทึกไม่ได้: พื้นที่เต็ม'); } };
+
+/* ---------- images (IndexedDB · อยู่ในเครื่องเท่านั้น) ---------- */
+let dbp = null;
+function idb() {
+  if (!dbp) dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('tradecal-img', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('img');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  return dbp;
+}
+async function imgPut(id, blob) { const d = await idb(); return new Promise((res, rej) => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').put(blob, id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function imgGet(id) { const d = await idb(); return new Promise(res => { const q = d.transaction('img').objectStore('img').get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); }
+async function imgDel(id) { const d = await idb(); return new Promise(res => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').delete(id); t.oncomplete = res; t.onerror = res; }); }
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const im = new Image(); const u = URL.createObjectURL(file);
+    im.onload = () => {
+      const k = Math.min(1, 1400 / Math.max(im.width, im.height));
+      const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+      c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', 0.8);
+    };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('load')); };
+    im.src = u;
+  });
+}
+
+/* ---------- money ---------- */
+const accOf = id => S.accounts.find(a => a.id === id) || S.accounts[0];
+function conv(v, from) {
+  const to = S.set.disp; if (from === to) return v;
+  return to === 'THB' ? v * S.set.fx : v / S.set.fx;
+}
+const tVal = t => conv(t.pnl, accOf(t.acc).cur);
+function money(v, opt = {}) {
+  if (S.set.hide) return '••••';
+  const thb = S.set.disp === 'THB';
+  const dec = opt.dec ?? (thb ? 0 : 2);
+  const s = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const sign = v > 0 && opt.sign ? '+' : v < 0 ? '-' : '';
+  return opt.bare ? sign + s : sign + (thb ? '฿' : '$') + s;
+}
+const cls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+
+/* ---------- dates ---------- */
+const pad = n => String(n).padStart(2, '0');
+const dk = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parse = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const MON = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MON3 = MON.map(m => m.slice(0, 3));
+const DOW = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+const monIdx = d => (d.getDay() + 6) % 7;
+const startOfWeek = d => { const x = new Date(d); x.setDate(x.getDate() - monIdx(x)); return x; };
+const todayK = () => dk(new Date());
+
+/* ---------- data views ---------- */
+const visTrades = () => S.trades.filter(t => S.acc === 'all' || t.acc === S.acc);
+function dayMap() {
+  const m = {};
+  for (const t of visTrades()) {
+    const e = m[t.date] || (m[t.date] = { v: 0, n: 0, note: false });
+    e.v += tVal(t); e.n++; if (t.note || t.lesson) e.note = true;
+  }
+  return m;
+}
+const sumRange = (m, a, b) => Object.keys(m).filter(k => k >= a && k <= b).reduce((s, k) => s + m[k].v, 0);
+
+/* ---------- UI state ---------- */
+let mode = 'month', cursor = new Date(), tab = 'cal', dayKey = null, anaPer = 'month';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 1800); }
+
+function accSelect(id) {
+  return `<select class="pill" id="${id}">
+    <option value="all"${S.acc === 'all' ? ' selected' : ''}>ทุกบัญชี</option>
+    ${S.accounts.map(a => `<option value="${a.id}"${S.acc === a.id ? ' selected' : ''}>${esc(a.name)} (${a.cur === 'THB' ? '฿' : '$'})</option>`).join('')}
+  </select>`;
+}
+function bindAcc(id) { const el = document.getElementById(id); if (el) el.onchange = () => { S.acc = el.value; save(); render(); }; }
+
+function goalCard(key, label, total) {
+  const g = S.goals[key];
+  const gv = g ? conv(g.amt, g.cur) : 0;
+  const pct = gv > 0 ? Math.max(0, Math.min(100, total / gv * 100)) : 0;
+  return `<div class="card">
+    <div class="lbl">${label}<button class="edit" data-goal="${key}" aria-label="ตั้งเป้า">✎</button></div>
+    <div class="bar${total < 0 ? ' neg' : ''}"><i style="width:${total < 0 ? 100 : pct}%;${total < 0 ? 'opacity:.35' : ''}"></i></div>
+    <div class="goalrow num"><span class="${cls(total)}">${money(total)}</span><span class="${gv ? 'pos' : 'mute'}">${gv ? money(gv) : 'ยังไม่ตั้ง'}</span></div>
+  </div>`;
+}
+
+/* ---------- calendar renderers ---------- */
+function renderCal() {
+  document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+  const m = dayMap(); const body = $('#calBody'); const tk = todayK();
+  if (mode === 'month') {
+    const y = cursor.getFullYear(), mo = cursor.getMonth();
+    const first = new Date(y, mo, 1), last = new Date(y, mo + 1, 0);
+    const total = sumRange(m, dk(first), dk(last));
+    const cols = S.set.weekends ? 7 : 5;
+    let cells = '';
+    const lead = monIdx(first) >= cols ? 0 : monIdx(first);
+    for (let i = 0; i < lead; i++) cells += '<div class="cell blank"></div>';
+    for (let d = 1; d <= last.getDate(); d++) {
+      const dt = new Date(y, mo, d), wi = monIdx(dt);
+      if (wi >= cols) continue;
+      const k = dk(dt), e = m[k];
+      const c = e ? (e.v > 0 ? 'w' : e.v < 0 ? 'l' : '') : '';
+      cells += `<button class="cell ${c}${k === tk ? ' today' : ''}" data-day="${k}">
+        <span class="d">${e && e.note ? '📝' : ''}${d}</span>
+        <span class="v num">${e ? money(e.v, { sign: true, bare: true }) : '—'}</span>
+        <span class="n">${e && S.set.showCount ? e.n + ' ไม้' : '&nbsp;'}</span></button>`;
+    }
+    body.innerHTML = `
+      <div class="nav"><button data-nav="-1" aria-label="เดือนก่อน">‹</button><span class="t">${MON[mo]} ${y}</span><button data-nav="1" aria-label="เดือนถัดไป">›</button></div>
+      <div class="cards"><div class="card"><div class="lbl">Total P&amp;L</div><div class="big num ${cls(total)}">${money(total)}</div></div>
+      ${goalCard(`${y}-${pad(mo + 1)}`, 'เป้าเดือนนี้', total)}</div>
+      <div class="opts"><button class="pill" id="wkBtn">Weekends: ${S.set.weekends ? 'ON' : 'OFF'} ⌄</button>${accSelect('accSel')}</div>
+      <div class="dow" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${DOW.slice(0, cols).map(x => `<span>${x}</span>`).join('')}</div>
+      <div class="grid g${cols}" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${cells}</div>`;
+    $('#wkBtn').onclick = () => { S.set.weekends = !S.set.weekends; save(); render(); };
+  } else if (mode === 'week') {
+    const s = startOfWeek(cursor), n = S.set.weekends ? 7 : 5;
+    const days = [...Array(n)].map((_, i) => { const d = new Date(s); d.setDate(s.getDate() + i); return d; });
+    const e7 = new Date(s); e7.setDate(s.getDate() + 6);
+    const total = sumRange(m, dk(s), dk(e7));
+    const lastD = days[days.length - 1];
+    const title = s.getMonth() === lastD.getMonth()
+      ? `${MON3[s.getMonth()]} ${s.getDate()} – ${lastD.getDate()}, ${s.getFullYear()}`
+      : `${MON3[s.getMonth()]} ${s.getDate()} – ${MON3[lastD.getMonth()]} ${lastD.getDate()}, ${lastD.getFullYear()}`;
+    body.innerHTML = `
+      <div class="nav"><button data-nav="-1" aria-label="สัปดาห์ก่อน">‹</button><span class="t">${title}</span><button data-nav="1" aria-label="สัปดาห์ถัดไป">›</button></div>
+      <div class="card" style="margin-bottom:14px"><div class="lbl">Total P&amp;L ${accSelect('accSel')}</div><div class="big num ${cls(total)}">${money(total)}</div></div>
+      <div class="wk">${days.map(d => {
+        const k = dk(d), e = m[k];
+        const notes = visTrades().filter(t => t.date === k && t.note).map(t => t.note).join(' · ');
+        return `<button class="wkrow${k === tk ? ' today' : ''}" data-day="${k}">
+          <div class="dd"><b>${d.getDate()}</b><span>${DOW[monIdx(d)]}</span></div>
+          <div class="mid">${e ? (S.set.showCount ? e.n + ' ไม้ · ' : '') + esc(notes || '') : '-'}</div>
+          <div class="v num ${e ? cls(e.v) : 'mute'}">${e ? money(e.v, { sign: true }) : '—'}</div></button>`;
+      }).join('')}</div>`;
+  } else if (mode === 'year') {
+    const y = cursor.getFullYear();
+    const total = sumRange(m, `${y}-01-01`, `${y}-12-31`);
+    let html = '';
+    for (let mo = 0; mo < 12; mo++) {
+      const first = new Date(y, mo, 1), last = new Date(y, mo + 1, 0);
+      let g = ''; const lead = Math.min(monIdx(first), 5);
+      for (let i = 0; i < lead; i++) g += '<i class="x"></i>';
+      for (let d = 1; d <= last.getDate(); d++) {
+        const dt = new Date(y, mo, d); if (monIdx(dt) > 4) continue;
+        const e = m[dk(dt)]; g += `<i class="${e ? (e.v > 0 ? 'w' : e.v < 0 ? 'l' : '') : ''}"></i>`;
+      }
+      const mt = sumRange(m, dk(first), dk(last));
+      html += `<button class="mini" data-month="${mo}"><div class="mn">${MON3[mo]}</div><div class="mg">${g}</div><div class="mt num ${cls(mt) || 'pos'}">${money(mt)}</div></button>`;
+    }
+    body.innerHTML = `
+      <div class="nav"><button data-nav="-1" aria-label="ปีก่อน">‹</button><span class="t">${y}</span><button data-nav="1" aria-label="ปีถัดไป">›</button></div>
+      <div class="cards"><div class="card"><div class="lbl">Total P&amp;L</div><div class="big num ${cls(total)}">${money(total)}</div></div>
+      ${goalCard(String(y), 'เป้าปีนี้', total)}</div>
+      <div class="opts" style="justify-content:center">${accSelect('accSel')}</div>
+      <div class="yr">${html}</div>`;
+  } else {
+    const ys = {};
+    for (const k in m) { const y = k.slice(0, 4); ys[y] = (ys[y] || 0) + m[k].v; }
+    const total = Object.values(ys).reduce((a, b) => a + b, 0);
+    const years = Object.keys(ys).sort().reverse();
+    body.innerHTML = `
+      <div class="card" style="margin-bottom:14px"><div class="lbl">Total P&amp;L ${accSelect('accSel')}</div>
+      <div class="big num ${cls(total)}">${money(total)}</div><div class="mute" style="margin-top:4px">รวมทุกปี</div></div>
+      <div class="yrows">${years.length ? years.map(y => `<button class="yrow" data-year="${y}"><span>${y}</span><span class="num ${cls(ys[y])}">${money(ys[y])}</span></button>`).join('')
+        : '<p class="empty">ยังไม่มีไม้ แตะวันในปฏิทินแล้วกด “เพิ่มไม้” เพื่อเริ่มจด</p>'}</div>`;
+  }
+  bindAcc('accSel');
+}
+
+/* ---------- day view ---------- */
+async function renderDay() {
+  const d = parse(dayKey);
+  const list = visTrades().filter(t => t.date === dayKey).sort((a, b) => a.time.localeCompare(b.time));
+  const vals = list.map(tVal);
+  const net = vals.reduce((a, b) => a + b, 0);
+  const pw = vals.filter(v => v > 0), pl = vals.filter(v => v < 0);
+  const v = $('#v-day');
+  v.innerHTML = `
+    <div class="daytop"><button class="back" id="dayBack" aria-label="กลับ">‹</button><h2>${MON[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}</h2></div>
+    <div class="card" style="margin-bottom:12px"><div class="lbl">Intraday PnL (${list.length})${list.length ? '<button class="lnk del" id="dayClear">ลบทั้งวัน</button>' : ''}</div>
+      <div class="big num ${cls(net)}">${money(net)}</div></div>
+    <div class="cards">
+      <div class="card"><div class="lbl pos">กำไร (${pw.length})</div><div class="big num pos" style="font-size:26px">${money(pw.reduce((a, b) => a + b, 0))}</div></div>
+      <div class="card"><div class="lbl neg">ขาดทุน (${pl.length})</div><div class="big num neg" style="font-size:26px">${money(pl.reduce((a, b) => a + b, 0))}</div></div>
+    </div>
+    <h3 style="font-size:22px;margin:6px 2px 12px">ไม้ของวันนี้</h3>
+    <div id="trList">${list.length ? '' : '<p class="empty">ยังไม่มีไม้วันนี้ จดทุกไม้ที่เข้า ทั้งกำไรและขาดทุน เพื่อให้ Win rate, Profit factor และ Expectancy คิดจากของจริง</p>'}</div>
+    <button class="btn" id="addTr">เพิ่มไม้</button>`;
+  const box = $('#trList');
+  for (const t of list) {
+    const a = accOf(t.acc), val = tVal(t);
+    const showAcc = S.accounts.length > 1;
+    const div = document.createElement('div'); div.className = 'tr';
+    div.innerHTML = `<div class="h"><span class="t num">${t.time}${showAcc ? ` · <span class="mute">${esc(a.name)}</span>` : ''}</span>
+        <span><button class="lnk" data-edit="${t.id}">แก้</button><button class="lnk del" data-del="${t.id}">ลบ</button></span></div>
+      <div class="amt num ${cls(val)}">${money(val, { sign: true })}${a.cur !== S.set.disp && !S.set.hide ? ` <span class="mute" style="font-size:13px;font-weight:500">(${a.cur === 'THB' ? '฿' : '$'}${Math.abs(t.pnl).toLocaleString()})</span>` : ''}</div>
+      ${t.note ? `<div class="txt"><b>โน้ต:</b> ${esc(t.note)}</div>` : ''}
+      ${t.lesson ? `<div class="txt"><b>บทเรียน:</b> ${esc(t.lesson)}</div>` : ''}`;
+    box.appendChild(div);
+    if (t.img) imgGet(t.id).then(b => { if (b) { const im = document.createElement('img'); im.src = URL.createObjectURL(b); im.alt = 'ภาพไม้'; im.onclick = () => showFull(im.src); div.appendChild(im); } });
+  }
+  $('#dayBack').onclick = () => { dayKey = null; render(); };
+  $('#addTr').onclick = () => tradeForm(null);
+  const clr = $('#dayClear');
+  if (clr) clr.onclick = () => confirmSheet(`ลบไม้ทั้ง ${list.length} ไม้ของวันนี้?`, async () => {
+    for (const t of list) { if (t.img) await imgDel(t.id); }
+    const ids = new Set(list.map(t => t.id)); S.trades = S.trades.filter(t => !ids.has(t.id)); save(); render(); toast('ลบแล้ว');
+  });
+  box.onclick = e => {
+    const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
+    if (ed) tradeForm(S.trades.find(t => t.id === ed.dataset.edit));
+    if (dl) confirmSheet('ลบไม้นี้?', async () => {
+      const t = S.trades.find(x => x.id === dl.dataset.del); if (t && t.img) await imgDel(t.id);
+      S.trades = S.trades.filter(x => x.id !== dl.dataset.del); save(); render(); toast('ลบแล้ว');
+    });
+  };
+}
+function showFull(src) { $('#fullImg').src = src; $('#full').classList.add('on'); }
+$('#full').onclick = () => $('#full').classList.remove('on');
+
+/* ---------- sheets ---------- */
+function openSheet(html) { $('#sheet').innerHTML = html; $('#ov').classList.add('on'); }
+function closeSheet() { $('#ov').classList.remove('on'); $('#sheet').innerHTML = ''; }
+$('#ov').onclick = e => { if (e.target.id === 'ov') closeSheet(); };
+function confirmSheet(msg, ok) {
+  openSheet(`<div class="sh"><h3>${esc(msg)}</h3><button class="x" id="cx" aria-label="ปิด">×</button></div>
+    <div style="display:grid;gap:10px"><button class="btn" id="cok" style="background:var(--loss);color:#fff">ยืนยัน</button><button class="btn ghost" id="cno">ยกเลิก</button></div>`);
+  $('#cx').onclick = $('#cno').onclick = closeSheet;
+  $('#cok').onclick = async () => { closeSheet(); await ok(); };
+}
+
+function tradeForm(t) {
+  const isNew = !t;
+  const now = new Date();
+  const defAcc = S.acc !== 'all' ? S.acc : S.accounts[0].id;
+  const f = t ? { ...t } : { id: uid(), acc: defAcc, date: dayKey, time: `${pad(now.getHours())}:${pad(now.getMinutes())}`, pnl: 0, note: '', lesson: '', img: false };
+  let side = t ? (t.pnl < 0 ? 'l' : 'p') : 'p';
+  let newBlob = null, dropImg = false;
+  const d = parse(f.date);
+  openSheet(`<div class="sh"><h3>${isNew ? 'ไม้ใหม่' : 'แก้ไม้'} · ${d.getDate()} ${MON3[d.getMonth()]} ${d.getFullYear()}</h3><button class="x" id="fx" aria-label="ปิด">×</button></div>
+    <div class="pl"><button class="p" id="sp">กำไร</button><button class="l" id="sl">ขาดทุน</button></div>
+    <div class="f2">
+      <div class="fld"><label for="famt">P&amp;L (<span id="fcur"></span>)</label><input id="famt" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" value="${t ? Math.abs(t.pnl) : ''}"></div>
+      <div class="fld"><label for="ftime">เวลา*</label><input id="ftime" type="time" value="${f.time}"></div>
+    </div>
+    <div class="f2">
+      <div class="fld"><label for="facc">บัญชี</label><select id="facc">${S.accounts.map(a => `<option value="${a.id}"${a.id === f.acc ? ' selected' : ''}>${esc(a.name)} (${a.cur})</option>`).join('')}</select></div>
+      <div class="fld"><label for="fdate">วันที่</label><input id="fdate" type="date" value="${f.date}"></div>
+    </div>
+    <div class="fld"><label for="fnote">โน้ต (ไม่ใส่ก็ได้)</label><textarea id="fnote" placeholder="เช่น 🦅 SELL รอบคืน · 0.05 lot">${esc(f.note)}</textarea></div>
+    <div class="fld"><label for="fles">บทเรียน (ไม่ใส่ก็ได้)</label><textarea id="fles" placeholder="ได้อะไรจากไม้นี้">${esc(f.lesson)}</textarea></div>
+    <div id="fprev"></div>
+    <label class="pick" id="fpick">＋ แนบภาพชาร์ต / ใบ MT4<input type="file" accept="image/*" id="ffile"></label>
+    <button class="btn" id="fsave">บันทึกไม้</button>`);
+  const setSide = s => { side = s; $('#sp').classList.toggle('on', s === 'p'); $('#sl').classList.toggle('on', s === 'l'); };
+  const setCur = () => { $('#fcur').textContent = accOf($('#facc').value).cur === 'THB' ? 'บาท' : 'USD'; };
+  setSide(side); setCur();
+  $('#sp').onclick = () => setSide('p'); $('#sl').onclick = () => setSide('l');
+  $('#facc').onchange = setCur;
+  $('#fx').onclick = closeSheet;
+  const showPrev = src => {
+    $('#fprev').innerHTML = src ? `<div class="prev"><img src="${src}" alt="ภาพที่แนบ"><button id="frm" aria-label="เอาภาพออก">✕</button></div>` : '';
+    $('#fpick').style.display = src ? 'none' : '';
+    if (src) $('#frm').onclick = () => { newBlob = null; dropImg = true; showPrev(null); };
+  };
+  if (f.img) imgGet(f.id).then(b => { if (b && !newBlob && !dropImg) showPrev(URL.createObjectURL(b)); });
+  $('#ffile').onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try { newBlob = await shrink(file); dropImg = false; showPrev(URL.createObjectURL(newBlob)); }
+    catch (er) { toast('เปิดภาพนี้ไม่ได้ ลองไฟล์ JPG/PNG'); }
+  };
+  $('#fsave').onclick = async () => {
+    const amt = parseFloat($('#famt').value);
+    if (!(amt >= 0) || isNaN(amt)) { toast('ใส่จำนวนเงินก่อน'); $('#famt').focus(); return; }
+    f.pnl = side === 'l' ? -amt : amt;
+    f.time = $('#ftime').value || f.time; f.acc = $('#facc').value; f.date = $('#fdate').value || f.date;
+    f.note = $('#fnote').value.trim(); f.lesson = $('#fles').value.trim();
+    try {
+      if (newBlob) { await imgPut(f.id, newBlob); f.img = true; }
+      else if (dropImg) { await imgDel(f.id); f.img = false; }
+    } catch (er) { toast('เก็บภาพไม่ได้ บันทึกไม้โดยไม่มีภาพ'); f.img = false; }
+    if (isNew) S.trades.push(f); else S.trades = S.trades.map(x => x.id === f.id ? f : x);
+    if (S.acc !== 'all' && S.acc !== f.acc) S.acc = 'all';
+    dayKey = f.date; save(); closeSheet(); render(); toast(isNew ? 'บันทึกแล้ว' : 'แก้แล้ว');
+  };
+}
+
+function goalForm(key) {
+  const g = S.goals[key];
+  const isYear = key.length === 4;
+  openSheet(`<div class="sh"><h3>ตั้ง${isYear ? 'เป้าปี ' + key : 'เป้าเดือน ' + MON[+key.slice(5) - 1] + ' ' + key.slice(0, 4)}</h3><button class="x" id="gx" aria-label="ปิด">×</button></div>
+    <div class="fld"><label for="gamt">เป้ากำไร (${S.set.disp === 'THB' ? 'บาท' : 'USD'})</label>
+    <input id="gamt" type="number" inputmode="decimal" min="0" step="any" value="${g ? +conv(g.amt, g.cur).toFixed(2) : ''}" placeholder="0"></div>
+    <div style="display:grid;gap:10px"><button class="btn" id="gok">บันทึกเป้า</button>${g ? '<button class="btn ghost" id="gdel">ลบเป้า</button>' : ''}</div>`);
+  $('#gx').onclick = closeSheet;
+  $('#gok').onclick = () => { const v = parseFloat($('#gamt').value); if (!(v > 0)) { toast('ใส่ตัวเลขมากกว่า 0'); return; } S.goals[key] = { amt: v, cur: S.set.disp }; save(); closeSheet(); render(); };
+  if (g) $('#gdel').onclick = () => { delete S.goals[key]; save(); closeSheet(); render(); };
+}
+
+/* ---------- analytics ---------- */
+function periodRange(p) {
+  const n = new Date();
+  if (p === 'week') { const s = startOfWeek(n), e = new Date(s); e.setDate(s.getDate() + 6); return [dk(s), dk(e)]; }
+  if (p === 'month') return [dk(new Date(n.getFullYear(), n.getMonth(), 1)), dk(new Date(n.getFullYear(), n.getMonth() + 1, 0))];
+  if (p === 'year') return [`${n.getFullYear()}-01-01`, `${n.getFullYear()}-12-31`];
+  return ['0000', '9999'];
+}
+function renderAna() {
+  const [a, b] = periodRange(anaPer);
+  const list = visTrades().filter(t => t.date >= a && t.date <= b).sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+  const vals = list.map(tVal);
+  const wins = vals.filter(v => v > 0), losses = vals.filter(v => v < 0);
+  const gw = wins.reduce((s, v) => s + v, 0), gl = losses.reduce((s, v) => s + v, 0);
+  const net = gw + gl, n = vals.length;
+  const wr = wins.length + losses.length ? wins.length / (wins.length + losses.length) * 100 : 0;
+  const pf = gl ? gw / -gl : (gw > 0 ? Infinity : 0);
+  const exp = n ? net / n : 0;
+  const avgW = wins.length ? gw / wins.length : 0, avgL = losses.length ? gl / losses.length : 0;
+  // daily
+  const dm = {}; list.forEach((t, i) => { dm[t.date] = (dm[t.date] || 0) + vals[i]; });
+  const dv = Object.values(dm);
+  const wd = dv.filter(v => v > 0).length, ld = dv.filter(v => v < 0).length, fd = dv.filter(v => v === 0).length;
+  // equity + drawdown
+  let eq = 0, peak = 0, mdd = 0; const pts = [0], dds = [0];
+  for (const v of vals) { eq += v; peak = Math.max(peak, eq); mdd = Math.min(mdd, eq - peak); pts.push(eq); dds.push(eq - peak); }
+  const donut = (p, l) => {
+    const tot = p + l, r = 52, c = 2 * Math.PI * r;
+    if (!tot) return `<svg width="140" height="140" viewBox="0 0 140 140"><circle cx="70" cy="70" r="${r}" fill="none" stroke="#5a6070" stroke-width="22"/></svg>`;
+    const pl = c * p / tot;
+    return `<svg width="140" height="140" viewBox="0 0 140 140" style="transform:rotate(-90deg)">
+      <circle cx="70" cy="70" r="${r}" fill="none" stroke="var(--loss)" stroke-width="22"/>
+      <circle cx="70" cy="70" r="${r}" fill="none" stroke="var(--win)" stroke-width="22" stroke-dasharray="${pl} ${c}"/></svg>`;
+  };
+  const chart = () => {
+    if (n < 2) return '<p class="empty">ต้องมีอย่างน้อย 2 ไม้ในช่วงนี้ถึงจะวาดกราฟได้</p>';
+    const W = 320, H = 150, L = 4, R = 4, T = 10, B = 18;
+    const mx = Math.max(...pts, 0), mn = Math.min(...pts, 0), span = (mx - mn) || 1;
+    const x = i => L + i * (W - L - R) / (pts.length - 1), y = v => T + (mx - v) * (H - T - B) / span;
+    const line = pts.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const ddArea = `M${x(0)},${y(pts[0])} ` + pts.map((v, i) => `L${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ') + ' ' +
+      [...pts].map((v, i) => i).reverse().map(i => `L${x(i).toFixed(1)},${y(pts[i] - dds[i]).toFixed(1)}`).join(' ') + 'Z';
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="กราฟกำไรสะสมและ drawdown">
+      <line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="#39425a" stroke-dasharray="3 4"/>
+      <path d="${ddArea}" fill="var(--loss)" fill-opacity=".28" stroke="none"/>
+      <polyline points="${line}" fill="none" stroke="var(--win)" stroke-width="2.2" stroke-linejoin="round"/>
+      <circle cx="${x(pts.length - 1)}" cy="${y(pts[pts.length - 1])}" r="3.5" fill="var(--win)"/>
+      <text x="${L}" y="${H - 4}">ไม้แรก</text><text x="${W - R}" y="${H - 4}" text-anchor="end">ไม้ล่าสุด (${n})</text>
+    </svg>`;
+  };
+  const pfTxt = pf === Infinity ? '∞' : pf.toFixed(2);
+  $('#v-ana').innerHTML = `
+    <h2 class="center" style="margin:4px 0 14px;font-size:26px">Analytics</h2>
+    <div class="opts">${accSelect('accSelA')}
+      <select class="pill" id="perSel" style="color:var(--text)">
+        ${[['week', 'สัปดาห์นี้'], ['month', 'เดือนนี้'], ['year', 'ปีนี้'], ['all', 'ทั้งหมด']].map(([k, l]) => `<option value="${k}"${anaPer === k ? ' selected' : ''}>${l}</option>`).join('')}
+      </select></div>
+    <div class="sec"><h3>กำไรสะสม &amp; Drawdown</h3>${chart()}
+      <div class="kv num" style="margin-top:10px"><span>Max drawdown</span><span class="neg">${money(mdd)}</span></div></div>
+    <div class="sec"><h3>Profit and Loss</h3>
+      <div class="kv num"><span>กำไรรวม</span><span class="pos">${money(gw)}</span><span>ขาดทุนรวม</span><span class="neg">${money(gl)}</span></div>
+      <div class="donut">${donut(gw, -gl)}</div>
+      <div class="legend"><span><i style="background:var(--win)"></i>Profit</span><span><i style="background:var(--loss)"></i>Loss</span></div>
+      <div class="center" style="margin-top:16px"><div class="mute">Net PnL</div><div class="huge num ${cls(net)}">${money(net)}</div></div></div>
+    <div class="sec"><h3>Win rate</h3>
+      <div class="kv num"><span>จำนวนไม้</span><span>${n}</span><span>ไม้ชนะ</span><span class="pos">${wins.length}</span><span>ไม้แพ้</span><span class="neg">${losses.length}</span></div>
+      <div class="donut">${donut(wins.length, losses.length)}</div>
+      <div class="center huge num">${wr.toFixed(1)}%</div>
+      <div class="stat3 num"><div><b class="pos">${wd}</b><span>วันกำไร</span></div><div><b class="neg">${ld}</b><span>วันขาดทุน</span></div><div><b>${fd}</b><span>วันเท่าทุน</span></div></div></div>
+    <div class="sec"><h3>Profit Factor &amp; Expectancy</h3>
+      <div class="kv num">
+        <span>Profit factor</span><span>${pfTxt}</span>
+        <span>Expectancy / ไม้</span><span class="${cls(exp)}">${money(exp)}</span>
+        <span>เฉลี่ยไม้ชนะ</span><span class="pos">${money(avgW)}</span>
+        <span>เฉลี่ยไม้แพ้</span><span class="neg">${money(avgL)}</span>
+        <span>ชนะมากสุด</span><span class="pos">${money(wins.length ? Math.max(...wins) : 0)}</span>
+        <span>แพ้มากสุด</span><span class="neg">${money(losses.length ? Math.min(...losses) : 0)}</span>
+      </div>
+      <p class="note" style="margin:12px 0 0">Profit factor = กำไรรวม ÷ ขาดทุนรวม มากกว่า 1 แปลว่าระบบได้มากกว่าเสีย · Expectancy = กำไรเฉลี่ยต่อไม้ · ตัวเลขยังเชื่อไม่ได้จนกว่าจะมีราว 20 ไม้ขึ้นไป</p></div>`;
+  bindAcc('accSelA');
+  $('#perSel').onchange = e => { anaPer = e.target.value; render(); };
+}
+
+/* ---------- settings ---------- */
+function renderSet() {
+  const sw = (id, on) => `<label class="sw"><input type="checkbox" id="${id}"${on ? ' checked' : ''}><span></span></label>`;
+  $('#v-set').innerHTML = `
+    <h2 class="center" style="margin:4px 0 6px;font-size:26px">Settings</h2>
+    <div class="grp">ทั่วไป</div>
+    <div class="list">
+      <div class="li">แสดงจำนวนไม้ในปฏิทิน ${sw('sCount', S.set.showCount)}</div>
+      <div class="li">ซ่อนตัวเลข P&amp;L ${sw('sHide', S.set.hide)}</div>
+      <div class="li">แสดงเสาร์–อาทิตย์ ${sw('sWk', S.set.weekends)}</div>
+    </div>
+    <div class="grp">สกุลเงิน</div>
+    <div class="list">
+      <div class="li">แสดงผลเป็น <span class="cur" id="curSw2"><button data-c="THB">฿</button><button data-c="USD">$</button></span></div>
+      <div class="li"><span>อัตราแลกเปลี่ยน<small>1 USD = ? บาท · ใช้แปลงตอนแสดงผลเท่านั้น</small></span><input type="number" id="sFx" step="0.01" min="1" inputmode="decimal" value="${S.set.fx}"></div>
+    </div>
+    <div class="grp">บัญชีเทรด</div>
+    <div class="list" id="accList">
+      ${S.accounts.map(a => `<button class="li" data-acc="${a.id}"><span>${esc(a.name)}<small>${a.cur === 'THB' ? 'บาท (฿)' : 'ดอลลาร์ ($)'} · ${S.trades.filter(t => t.acc === a.id).length} ไม้</small></span><span class="chev">›</span></button>`).join('')}
+      <button class="li" id="accAdd" style="color:var(--accent)">＋ เพิ่มบัญชี</button>
+    </div>
+    <div class="grp">ข้อมูล</div>
+    <div class="list">
+      <button class="li" id="exJson"><span>สำรองข้อมูล (JSON)<small>รวมภาพที่แนบ</small></span><span class="chev">›</span></button>
+      <label class="li" style="cursor:pointer"><span>กู้คืนจากไฟล์สำรอง<small>แทนที่ข้อมูลทั้งหมดในเครื่องนี้</small></span><span class="chev">›</span><input type="file" id="imJson" accept="application/json,.json" style="display:none"></label>
+      <button class="li" id="exCsv"><span>Export CSV<small>เปิดใน Excel / Google Sheets ได้</small></span><span class="chev">›</span></button>
+    </div>
+    <p class="note">ข้อมูลทั้งหมด รวมภาพชาร์ต เก็บอยู่ในเครื่องนี้เท่านั้น ไม่ได้ส่งขึ้นที่ไหน ถ้าล้างข้อมูล Safari หรือเปลี่ยนเครื่อง ข้อมูลจะหาย กดสำรองไว้เป็นระยะ · บน iPhone ให้เปิดจากไอคอนหน้าจอโฮมเสมอ เพราะ Safari กับไอคอนเก็บข้อมูลแยกกัน</p>`;
+  $('#sCount').onchange = e => { S.set.showCount = e.target.checked; save(); };
+  $('#sHide').onchange = e => { S.set.hide = e.target.checked; save(); };
+  $('#sWk').onchange = e => { S.set.weekends = e.target.checked; save(); };
+  $('#sFx').onchange = e => { const v = parseFloat(e.target.value); if (v > 0) { S.set.fx = v; save(); toast('ตั้งอัตราแล้ว'); } };
+  bindCur('#curSw2');
+  $('#accList').onclick = e => { const b = e.target.closest('[data-acc]'); if (b) accForm(b.dataset.acc); };
+  $('#accAdd').onclick = () => accForm(null);
+  $('#exJson').onclick = exportJson;
+  $('#imJson').onchange = importJson;
+  $('#exCsv').onclick = exportCsv;
+}
+function accForm(id) {
+  const a = id ? accOf(id) : { id: uid(), name: '', cur: 'THB' };
+  const used = id ? S.trades.filter(t => t.acc === id).length : 0;
+  openSheet(`<div class="sh"><h3>${id ? 'แก้บัญชี' : 'บัญชีใหม่'}</h3><button class="x" id="ax" aria-label="ปิด">×</button></div>
+    <div class="fld"><label for="aname">ชื่อบัญชี</label><input id="aname" value="${esc(a.name)}" placeholder="เช่น Exness USD / พอร์ตบาท"></div>
+    <div class="fld"><label for="acur">สกุลเงินของบัญชี</label><select id="acur"><option value="USD"${a.cur === 'USD' ? ' selected' : ''}>ดอลลาร์ (USD)</option><option value="THB"${a.cur === 'THB' ? ' selected' : ''}>บาท (THB)</option></select></div>
+    ${used ? `<p class="note" style="margin:0 0 14px">บัญชีนี้มี ${used} ไม้ ถ้าเปลี่ยนสกุลเงิน ตัวเลขเดิมจะถูกอ่านเป็นสกุลใหม่ (ไม่แปลงให้)</p>` : ''}
+    <div style="display:grid;gap:10px"><button class="btn" id="aok">บันทึก</button>
+    ${id && S.accounts.length > 1 ? `<button class="btn ghost" id="adel" style="color:var(--loss)">ลบบัญชี${used ? ` และไม้ ${used} ไม้` : ''}</button>` : ''}</div>`);
+  $('#ax').onclick = closeSheet;
+  $('#aok').onclick = () => {
+    const nm = $('#aname').value.trim(); if (!nm) { toast('ตั้งชื่อบัญชีก่อน'); return; }
+    a.name = nm; a.cur = $('#acur').value;
+    if (!id) S.accounts.push(a);
+    save(); closeSheet(); render(); toast('บันทึกแล้ว');
+  };
+  const del = $('#adel');
+  if (del) del.onclick = () => confirmSheet(`ลบบัญชี “${a.name}”${used ? ` และไม้ ${used} ไม้` : ''}?`, async () => {
+    for (const t of S.trades.filter(t => t.acc === id)) if (t.img) await imgDel(t.id);
+    S.trades = S.trades.filter(t => t.acc !== id); S.accounts = S.accounts.filter(x => x.id !== id);
+    if (S.acc === id) S.acc = 'all'; save(); render(); toast('ลบแล้ว');
+  });
+}
+
+/* ---------- export / import ---------- */
+function download(name, blob) {
+  const f = new File([blob], name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: name }).catch(() => {}); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+const blobToData = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
+async function exportJson() {
+  const imgs = {};
+  for (const t of S.trades) if (t.img) { const b = await imgGet(t.id); if (b) imgs[t.id] = await blobToData(b); }
+  download(`tradecal-${todayK()}.json`, new Blob([JSON.stringify({ app: 'tradecal', v: 1, state: S, imgs })], { type: 'application/json' }));
+}
+async function importJson(e) {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data.state || !Array.isArray(data.state.trades)) throw new Error('format');
+    confirmSheet(`กู้คืน ${data.state.trades.length} ไม้? ข้อมูลในเครื่องนี้จะถูกแทนที่`, async () => {
+      S = Object.assign(defState(), data.state); S.set = Object.assign(defState().set, S.set);
+      for (const [id, url] of Object.entries(data.imgs || {})) { const b = await (await fetch(url)).blob(); await imgPut(id, b); }
+      save(); render(); toast('กู้คืนแล้ว');
+    });
+  } catch (er) { toast('ไฟล์นี้ไม่ใช่ไฟล์สำรองของ TradeCal'); }
+  e.target.value = '';
+}
+function exportCsv() {
+  const rows = [['date', 'time', 'account', 'currency', 'pnl', 'note', 'lesson']];
+  [...S.trades].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+    .forEach(t => { const a = accOf(t.acc); rows.push([t.date, t.time, a.name, a.cur, t.pnl, t.note, t.lesson]); });
+  const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  download(`tradecal-${todayK()}.csv`, new Blob([csv], { type: 'text/csv' }));
+}
+
+/* ---------- wiring ---------- */
+function bindCur(sel) {
+  const box = document.querySelector(sel); if (!box) return;
+  box.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.c === S.set.disp);
+    b.onclick = () => { S.set.disp = b.dataset.c; save(); render(); };
+  });
+}
+function render() {
+  bindCur('#curSw');
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+  const show = id => document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === id));
+  if (tab === 'cal' && dayKey) { show('v-day'); renderDay(); }
+  else if (tab === 'cal') { show('v-cal'); renderCal(); }
+  else if (tab === 'ana') { show('v-ana'); renderAna(); }
+  else { show('v-set'); renderSet(); }
+}
+$('#seg').onclick = e => { const b = e.target.closest('button'); if (b) { mode = b.dataset.m; cursor = new Date(); render(); } };
+$('#calBody').onclick = e => {
+  const nv = e.target.closest('[data-nav]'), dy = e.target.closest('[data-day]'), mo = e.target.closest('[data-month]'),
+    yr = e.target.closest('[data-year]'), gl = e.target.closest('[data-goal]');
+  if (nv) {
+    const s = +nv.dataset.nav, c = new Date(cursor);
+    if (mode === 'month') { c.setDate(1); c.setMonth(c.getMonth() + s); }
+    else if (mode === 'week') c.setDate(c.getDate() + 7 * s);
+    else c.setFullYear(c.getFullYear() + s);
+    cursor = c; render();
+  } else if (dy) { dayKey = dy.dataset.day; render(); window.scrollTo(0, 0); }
+  else if (mo) { cursor = new Date(cursor.getFullYear(), +mo.dataset.month, 1); mode = 'month'; render(); }
+  else if (yr) { cursor = new Date(+yr.dataset.year, 0, 1); mode = 'year'; render(); }
+  else if (gl) goalForm(gl.dataset.goal);
+};
+$('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.t; if (tab !== 'cal') dayKey = null; render(); window.scrollTo(0, 0); } };
+render();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
