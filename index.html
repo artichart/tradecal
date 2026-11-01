@@ -184,6 +184,19 @@ svg text{fill:var(--mute);font-size:10px}
 .full img{max-width:100%;max-height:100%}
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#e8ecf5;color:#0b0f18;padding:10px 16px;border-radius:12px;font-weight:600;opacity:0;transition:.25s;z-index:40;pointer-events:none}
 .toast.on{opacity:1}
+.sync{border:0;background:none;font-size:12px;font-weight:600;color:var(--mute);vertical-align:3px;padding:2px 4px}
+.sync.bad{color:var(--gold)}
+.cloud{padding:16px}
+.cloud .fld{margin-bottom:10px}
+.cloud .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.cloud .btn{padding:13px;font-size:16px}
+.tags{font-size:13px;color:var(--accent);margin-top:4px}
+.tags .warn{color:var(--gold)}
+.sub{color:var(--mute);font-size:13px;letter-spacing:.5px;margin:4px 0 10px;font-weight:600}
+.tb{width:100%;border-collapse:collapse;font-size:14px}
+.tb th{color:var(--mute);font-weight:600;text-align:right;padding:6px 4px;font-size:12px}
+.tb td{padding:8px 4px;text-align:right;border-top:1px solid var(--line)}
+.tb th:first-child,.tb td:first-child{text-align:left}
 @media (max-width:380px){.cell .v{font-size:12px}.card .big{font-size:24px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -191,7 +204,7 @@ svg text{fill:var(--mute);font-size:10px}
 <body>
 <main>
   <div class="top">
-    <h1>Trade<b>Cal</b></h1>
+    <h1>Trade<b>Cal</b> <button class="sync" id="syncDot" aria-label="สถานะคลาวด์"></button></h1>
     <div class="cur" id="curSw"><button data-c="THB">฿ THB</button><button data-c="USD">$ USD</button></div>
   </div>
 
@@ -222,6 +235,7 @@ svg text{fill:var(--mute);font-size:10px}
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 <div class="full" id="full"><img id="fullImg" alt=""></div>
 <div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
 <script>
 'use strict';
@@ -240,7 +254,10 @@ function defState() {
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)) || defState(); } catch (e) { S = defState(); }
 S = Object.assign(defState(), S); S.set = Object.assign(defState().set, S.set);
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('บันทึกไม่ได้: พื้นที่เต็ม'); } };
+const save = () => {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('บันทึกไม่ได้: พื้นที่เต็ม'); }
+  if (S.cloudUser) { Q.p = true; saveQ(); soon(); }
+};
 
 /* ---------- images (IndexedDB · อยู่ในเครื่องเท่านั้น) ---------- */
 let dbp = null;
@@ -253,8 +270,15 @@ function idb() {
   return dbp;
 }
 async function imgPut(id, blob) { const d = await idb(); return new Promise((res, rej) => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').put(blob, id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
-async function imgGet(id) { const d = await idb(); return new Promise(res => { const q = d.transaction('img').objectStore('img').get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); }
-async function imgDel(id) { const d = await idb(); return new Promise(res => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').delete(id); t.oncomplete = res; t.onerror = res; }); }
+async function imgLocal(id) { const d = await idb(); return new Promise(res => { const q = d.transaction('img').objectStore('img').get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); }
+// เครื่องนี้ไม่มีภาพ (เช่นเปิดจากเครื่องใหม่) → โหลดจากคลาวด์แล้วเก็บไว้
+async function imgGet(id) {
+  const b = await imgLocal(id); if (b || !me) return b;
+  const r = await sb.storage.from('charts').download(`${me.id}/${id}.jpg`);
+  if (r.error || !r.data) return null;
+  imgPut(id, r.data).catch(() => {}); return r.data;
+}
+async function imgDel(id) { const d = await idb(); addQ('dimg', id); return new Promise(res => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').delete(id); t.oncomplete = res; t.onerror = res; }); }
 function shrink(file) {
   return new Promise((res, rej) => {
     const im = new Image(); const u = URL.createObjectURL(file);
@@ -267,6 +291,125 @@ function shrink(file) {
     im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('load')); };
     im.src = u;
   });
+}
+
+/* ---------- cloud (Supabase) ----------
+   เครื่องนี้ยังเป็นตัวหลักของหน้าจอ (ใช้ได้ตอนเน็ตหลุด) ทุกการแก้เข้าคิว Q แล้วค่อยส่งขึ้น
+   เปิดแอป/ล็อกอิน → ดึงจากคลาวด์ทับ ยกเว้นรายการที่ยังค้างในคิว
+   ล็อกอินครั้งแรกบนเครื่องนี้ → รวมของในเครื่องขึ้นไปด้วย */
+const SB_URL = 'https://okgjthvmhkhxnhhzcxsd.supabase.co';
+const SB_KEY = 'sb_publishable_w0PdjyPTHyAKZwtcuP_V8A_M9E-vGQa'; // publishable key ใส่ในแอปได้ RLS กันข้อมูลไว้
+const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+let me = null, syncMsg = '', lastSync = null;
+const QKEY = 'tradecal.q';
+const emptyQ = () => ({ t: [], a: [], dt: [], da: [], img: [], dimg: [], p: false });
+let Q; try { Q = JSON.parse(localStorage.getItem(QKEY)); } catch (e) { Q = null; }
+Q = Object.assign(emptyQ(), Q || {});
+const saveQ = () => { try { localStorage.setItem(QKEY, JSON.stringify(Q)); } catch (e) {} };
+function addQ(k, id) {
+  if (!S.cloudUser) return;
+  if (k === 'img') Q.dimg = Q.dimg.filter(x => x !== id);
+  if (!Q[k].includes(id)) Q[k].push(id); saveQ(); soon();
+}
+const qLen = () => Q.t.length + Q.a.length + Q.dt.length + Q.da.length + Q.img.length + Q.dimg.length + (Q.p ? 1 : 0);
+
+const TCOLS = ['system', 'session', 'side', 'lot', 'entry', 'sl', 'tp', 'outcome', 'followed', 'balance_before'];
+const toRow = t => {
+  const r = { user_id: me.id, id: t.id, acc: t.acc, date: t.date, time: t.time, pnl: t.pnl, note: t.note || '', lesson: t.lesson || '', img: !!t.img, updated_at: new Date().toISOString() };
+  for (const c of TCOLS) r[c] = t[c] ?? null;
+  return r;
+};
+const fromRow = r => {
+  const t = { id: r.id, acc: r.acc, date: r.date, time: r.time || '', pnl: +r.pnl, note: r.note || '', lesson: r.lesson || '', img: r.img };
+  for (const c of TCOLS) if (r[c] !== null) t[c] = ['lot', 'entry', 'sl', 'tp', 'balance_before'].includes(c) ? +r[c] : r[c];
+  return t;
+};
+const ok = async p => { const r = await p; if (r.error) throw r.error; return r; };
+async function fetchAll(tb) {
+  let out = [];
+  for (let i = 0; ; i += 1000) { const r = await ok(sb.from(tb).select('*').range(i, i + 999)); out = out.concat(r.data); if (r.data.length < 1000) return out; }
+}
+
+let soonH = null, flushing = false;
+const soon = () => { clearTimeout(soonH); soonH = setTimeout(flush, 800); };
+const taken = (k, ids) => { Q[k] = Q[k].filter(x => !ids.includes(x)); saveQ(); };
+async function flush() {
+  if (!me || flushing || !qLen()) return syncDot();
+  if (!navigator.onLine) { syncMsg = 'ออฟไลน์ · รอส่ง'; return syncDot(); }
+  flushing = true; syncDot();
+  try {
+    let ids = Q.a.slice();
+    const accs = S.accounts.filter(a => ids.includes(a.id)).map(a => ({ user_id: me.id, id: a.id, name: a.name, cur: a.cur }));
+    if (accs.length) await ok(sb.from('accounts').upsert(accs));
+    taken('a', ids);
+    ids = Q.t.slice();
+    const rows = S.trades.filter(t => ids.includes(t.id)).map(toRow);
+    if (rows.length) await ok(sb.from('trades').upsert(rows));
+    taken('t', ids);
+    for (const id of Q.img.slice()) {
+      const b = await imgLocal(id);
+      if (b) await ok(sb.storage.from('charts').upload(`${me.id}/${id}.jpg`, b, { upsert: true, contentType: 'image/jpeg' }));
+      taken('img', [id]);
+    }
+    ids = Q.dt.slice(); if (ids.length) await ok(sb.from('trades').delete().in('id', ids)); taken('dt', ids);
+    ids = Q.dimg.filter(id => !Q.img.includes(id));
+    if (ids.length) await ok(sb.storage.from('charts').remove(ids.map(id => `${me.id}/${id}.jpg`)));
+    taken('dimg', ids);
+    ids = Q.da.slice(); if (ids.length) await ok(sb.from('accounts').delete().in('id', ids)); taken('da', ids);
+    if (Q.p) {
+      Q.p = false; saveQ();
+      try { await ok(sb.from('prefs').upsert({ user_id: me.id, goals: S.goals, set: S.set, updated_at: new Date().toISOString() })); }
+      catch (e) { Q.p = true; saveQ(); throw e; }
+    }
+    lastSync = new Date(); syncMsg = '';
+  } catch (e) { syncMsg = 'ส่งไม่ผ่าน: ' + (e.message || e); }
+  flushing = false; syncDot();
+  if (qLen() && !syncMsg) soon();
+}
+async function pull() {
+  if (!me) return;
+  try {
+    const [ca, ct, pr] = await Promise.all([
+      ok(sb.from('accounts').select('*')).then(r => r.data), fetchAll('trades'),
+      ok(sb.from('prefs').select('*').maybeSingle()).then(r => r.data)]);
+    const first = S.cloudUser !== me.id;
+    if (first) { S.cloudUser = me.id; Q = emptyQ(); }
+    const merge = (cloud, local, qk, dq) => {
+      const m = new Map(cloud.map(x => [x.id, x]));
+      for (const x of local) if (first || Q[qk].includes(x.id)) {
+        m.set(x.id, x);
+        if (first) { addQ(qk, x.id); if (x.img) addQ('img', x.id); }
+      }
+      for (const id of Q[dq]) m.delete(id);
+      return [...m.values()];
+    };
+    S.accounts = merge(ca.map(r => ({ id: r.id, name: r.name, cur: r.cur })), S.accounts, 'a', 'da');
+    S.trades = merge(ct.map(fromRow), S.trades, 't', 'dt');
+    if (!S.accounts.length) { S.accounts = defState().accounts; addQ('a', 'main'); }
+    if (pr && !first && !Q.p) { S.goals = pr.goals || {}; S.set = Object.assign(defState().set, pr.set); }
+    else Q.p = true;
+    if (S.acc !== 'all' && !S.accounts.some(a => a.id === S.acc)) S.acc = 'all';
+    localStorage.setItem(KEY, JSON.stringify(S)); saveQ();
+    lastSync = new Date(); syncMsg = '';
+    render(); if (first && S.trades.length) toast(`ย้ายขึ้นคลาวด์ ${S.trades.length} ไม้`);
+    flush();
+  } catch (e) { syncMsg = 'ดึงข้อมูลไม่ได้: ' + (e.message || e); syncDot(); }
+}
+function syncDot() {
+  const el = document.getElementById('syncDot'); if (!el) return;
+  const n = qLen();
+  el.textContent = !S.cloudUser ? '' : !me ? '☁︎ ออก' : flushing ? '☁︎ …' : syncMsg ? '☁︎ !' : n ? `☁︎ ${n}` : '☁︎ ✓';
+  el.className = 'sync' + (syncMsg || (S.cloudUser && !me) ? ' bad' : '');
+  if (tab === 'set' && document.getElementById('cloudBox')) $('#cloudBox').innerHTML = cloudHtml();
+}
+if (sb) {
+  sb.auth.onAuthStateChange((ev, s) => {
+    const u = s ? s.user : null; const was = me && me.id;
+    me = u; if (u && u.id !== was) setTimeout(pull, 0);
+    if (!u) syncDot();
+  });
+  addEventListener('online', () => { syncMsg = ''; flush(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && me) pull(); });
 }
 
 /* ---------- money ---------- */
@@ -446,6 +589,7 @@ async function renderDay() {
     div.innerHTML = `<div class="h"><span class="t num">${t.time}${showAcc ? ` · <span class="mute">${esc(a.name)}</span>` : ''}</span>
         <span><button class="lnk" data-edit="${t.id}">แก้</button><button class="lnk del" data-del="${t.id}">ลบ</button></span></div>
       <div class="amt num ${cls(val)}">${money(val, { sign: true })}${a.cur !== S.set.disp && !S.set.hide ? ` <span class="mute" style="font-size:13px;font-weight:500">(${a.cur === 'THB' ? '฿' : '$'}${Math.abs(t.pnl).toLocaleString()})</span>` : ''}</div>
+      ${tagLine(t)}
       ${t.note ? `<div class="txt"><b>โน้ต:</b> ${esc(t.note)}</div>` : ''}
       ${t.lesson ? `<div class="txt"><b>บทเรียน:</b> ${esc(t.lesson)}</div>` : ''}`;
     box.appendChild(div);
@@ -455,7 +599,7 @@ async function renderDay() {
   $('#addTr').onclick = () => tradeForm(null);
   const clr = $('#dayClear');
   if (clr) clr.onclick = () => confirmSheet(`ลบไม้ทั้ง ${list.length} ไม้ของวันนี้?`, async () => {
-    for (const t of list) { if (t.img) await imgDel(t.id); }
+    for (const t of list) { if (t.img) await imgDel(t.id); addQ('dt', t.id); }
     const ids = new Set(list.map(t => t.id)); S.trades = S.trades.filter(t => !ids.has(t.id)); save(); render(); toast('ลบแล้ว');
   });
   box.onclick = e => {
@@ -463,6 +607,7 @@ async function renderDay() {
     if (ed) tradeForm(S.trades.find(t => t.id === ed.dataset.edit));
     if (dl) confirmSheet('ลบไม้นี้?', async () => {
       const t = S.trades.find(x => x.id === dl.dataset.del); if (t && t.img) await imgDel(t.id);
+      addQ('dt', dl.dataset.del);
       S.trades = S.trades.filter(x => x.id !== dl.dataset.del); save(); render(); toast('ลบแล้ว');
     });
   };
@@ -481,11 +626,32 @@ function confirmSheet(msg, ok) {
   $('#cok').onclick = async () => { closeSheet(); await ok(); };
 }
 
+/* ---------- ช่องวิเคราะห์ ---------- */
+const SYS = { garand: 'M1 Garand', v5: 'EMA50 V5', manual: 'นอกระบบ' };
+const SES = { asia: 'เอเชีย', eu: 'ยุโรป', ny: 'NY', other: 'อื่นๆ' };
+const SIDE = { buy: 'BUY', sell: 'SELL' };
+const OUT = { tp: 'TP', sl: 'SL', manual: 'ปิดเอง', be: 'เท่าทุน' };
+// เวลาไทย: เอเชีย 08–11 · ยุโรป 12–16 · NY 19–23
+function guessSes(hhmm) {
+  const h = +String(hhmm).slice(0, 2);
+  return h >= 7 && h < 12 ? 'asia' : h >= 12 && h < 17 ? 'eu' : h >= 19 ? 'ny' : 'other';
+}
+const opts = (map, v) => `<option value="">—</option>` + Object.entries(map).map(([k, l]) => `<option value="${k}"${v === k ? ' selected' : ''}>${l}</option>`).join('');
+function tagLine(t) {
+  const side = t.side ? SIDE[t.side] + (t.lot ? ' ' + t.lot : '') : '';
+  const parts = [SYS[t.system], SES[t.session], side, t.entry ? '@' + t.entry : '', OUT[t.outcome]].filter(Boolean).map(esc);
+  if (t.followed === false) parts.push('<span class="warn">⚠️ ไม่ตามระบบ</span>');
+  return parts.length ? `<div class="tags">${parts.join(' · ')}</div>` : '';
+}
+
 function tradeForm(t) {
   const isNew = !t;
   const now = new Date();
   const defAcc = S.acc !== 'all' ? S.acc : S.accounts[0].id;
-  const f = t ? { ...t } : { id: uid(), acc: defAcc, date: dayKey, time: `${pad(now.getHours())}:${pad(now.getMinutes())}`, pnl: 0, note: '', lesson: '', img: false };
+  const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const f = t ? { ...t } : { id: uid(), acc: defAcc, date: dayKey, time: hm, pnl: 0, note: '', lesson: '', img: false, system: S.lastSys, session: guessSes(hm) };
+  const num = v => v ?? '';
+  const fol = f.followed === true ? 'y' : f.followed === false ? 'n' : '';
   let side = t ? (t.pnl < 0 ? 'l' : 'p') : 'p';
   let newBlob = null, dropImg = false;
   const d = parse(f.date);
@@ -499,6 +665,27 @@ function tradeForm(t) {
       <div class="fld"><label for="facc">บัญชี</label><select id="facc">${S.accounts.map(a => `<option value="${a.id}"${a.id === f.acc ? ' selected' : ''}>${esc(a.name)} (${a.cur})</option>`).join('')}</select></div>
       <div class="fld"><label for="fdate">วันที่</label><input id="fdate" type="date" value="${f.date}"></div>
     </div>
+    <div class="sub">สำหรับวิเคราะห์ (ไม่ใส่ก็ได้)</div>
+    <div class="f2">
+      <div class="fld"><label for="fsys">ระบบ</label><select id="fsys">${opts(SYS, f.system)}</select></div>
+      <div class="fld"><label for="fses">ช่วงเวลา</label><select id="fses">${opts(SES, f.session)}</select></div>
+    </div>
+    <div class="f2">
+      <div class="fld"><label for="fside">ฝั่ง</label><select id="fside">${opts(SIDE, f.side)}</select></div>
+      <div class="fld"><label for="flot">Lot</label><input id="flot" type="number" inputmode="decimal" step="0.01" min="0" value="${num(f.lot)}"></div>
+    </div>
+    <div class="f2">
+      <div class="fld"><label for="fent">ราคาเข้า</label><input id="fent" type="number" inputmode="decimal" step="any" value="${num(f.entry)}"></div>
+      <div class="fld"><label for="fout">จบที่</label><select id="fout">${opts(OUT, f.outcome)}</select></div>
+    </div>
+    <div class="f2">
+      <div class="fld"><label for="fsl">SL</label><input id="fsl" type="number" inputmode="decimal" step="any" value="${num(f.sl)}"></div>
+      <div class="fld"><label for="ftp">TP</label><input id="ftp" type="number" inputmode="decimal" step="any" value="${num(f.tp)}"></div>
+    </div>
+    <div class="f2">
+      <div class="fld"><label for="ffol">ทำตามระบบ?</label><select id="ffol"><option value="">—</option><option value="y"${fol === 'y' ? ' selected' : ''}>ใช่</option><option value="n"${fol === 'n' ? ' selected' : ''}>ไม่ใช่</option></select></div>
+      <div class="fld"><label for="fbal">พอร์ตก่อนเข้า</label><input id="fbal" type="number" inputmode="decimal" step="any" min="0" value="${num(f.balance_before)}"></div>
+    </div>
     <div class="fld"><label for="fnote">โน้ต (ไม่ใส่ก็ได้)</label><textarea id="fnote" placeholder="เช่น 🦅 SELL รอบคืน · 0.05 lot">${esc(f.note)}</textarea></div>
     <div class="fld"><label for="fles">บทเรียน (ไม่ใส่ก็ได้)</label><textarea id="fles" placeholder="ได้อะไรจากไม้นี้">${esc(f.lesson)}</textarea></div>
     <div id="fprev"></div>
@@ -509,6 +696,7 @@ function tradeForm(t) {
   setSide(side); setCur();
   $('#sp').onclick = () => setSide('p'); $('#sl').onclick = () => setSide('l');
   $('#facc').onchange = setCur;
+  if (isNew) $('#ftime').onchange = e => { $('#fses').value = guessSes(e.target.value); };
   $('#fx').onclick = closeSheet;
   const showPrev = src => {
     $('#fprev').innerHTML = src ? `<div class="prev"><img src="${src}" alt="ภาพที่แนบ"><button id="frm" aria-label="เอาภาพออก">✕</button></div>` : '';
@@ -527,10 +715,17 @@ function tradeForm(t) {
     f.pnl = side === 'l' ? -amt : amt;
     f.time = $('#ftime').value || f.time; f.acc = $('#facc').value; f.date = $('#fdate').value || f.date;
     f.note = $('#fnote').value.trim(); f.lesson = $('#fles').value.trim();
+    const sel = (id, k) => { const v = $(id).value; if (v) f[k] = v; else delete f[k]; };
+    const nv = (id, k) => { const v = parseFloat($(id).value); if (isNaN(v)) delete f[k]; else f[k] = v; };
+    sel('#fsys', 'system'); sel('#fses', 'session'); sel('#fside', 'side'); sel('#fout', 'outcome');
+    nv('#flot', 'lot'); nv('#fent', 'entry'); nv('#fsl', 'sl'); nv('#ftp', 'tp'); nv('#fbal', 'balance_before');
+    const fv = $('#ffol').value; if (fv) f.followed = fv === 'y'; else delete f.followed;
+    if (f.system) S.lastSys = f.system;
     try {
-      if (newBlob) { await imgPut(f.id, newBlob); f.img = true; }
+      if (newBlob) { await imgPut(f.id, newBlob); f.img = true; addQ('img', f.id); }
       else if (dropImg) { await imgDel(f.id); f.img = false; }
     } catch (er) { toast('เก็บภาพไม่ได้ บันทึกไม้โดยไม่มีภาพ'); f.img = false; }
+    addQ('t', f.id);
     if (isNew) S.trades.push(f); else S.trades = S.trades.map(x => x.id === f.id ? f : x);
     if (S.acc !== 'all' && S.acc !== f.acc) S.acc = 'all';
     dayKey = f.date; save(); closeSheet(); render(); toast(isNew ? 'บันทึกแล้ว' : 'แก้แล้ว');
@@ -600,6 +795,20 @@ function renderAna() {
     </svg>`;
   };
   const pfTxt = pf === Infinity ? '∞' : pf.toFixed(2);
+  // ตารางแยกกลุ่ม · ไม้ที่ไม่ได้กรอกช่องนั้นไม่นับ
+  const brk = (title, key) => {
+    const g = {};
+    list.forEach((t, i) => { const k = key(t); if (!k) return; (g[k] = g[k] || []).push(vals[i]); });
+    const ks = Object.keys(g); if (!ks.length) return '';
+    return `<div class="sec"><h3>${title}</h3><table class="tb num"><tr><th>กลุ่ม</th><th>ไม้</th><th>Win%</th><th>PF</th><th>Net</th></tr>
+      ${ks.map(k => {
+        const v = g[k], w = v.filter(x => x > 0), l = v.filter(x => x < 0);
+        const sw = w.reduce((a, b) => a + b, 0), sl = l.reduce((a, b) => a + b, 0);
+        const p = sl ? (sw / -sl).toFixed(2) : sw > 0 ? '∞' : '—';
+        const wr = w.length + l.length ? (w.length / (w.length + l.length) * 100).toFixed(0) + '%' : '—';
+        return `<tr><td>${esc(k)}</td><td>${v.length}</td><td>${wr}</td><td>${p}</td><td class="${cls(sw + sl)}">${money(sw + sl)}</td></tr>`;
+      }).join('')}</table></div>`;
+  };
   $('#v-ana').innerHTML = `
     <h2 class="center" style="margin:4px 0 14px;font-size:26px">Analytics</h2>
     <div class="opts">${accSelect('accSelA')}
@@ -627,7 +836,11 @@ function renderAna() {
         <span>ชนะมากสุด</span><span class="pos">${money(wins.length ? Math.max(...wins) : 0)}</span>
         <span>แพ้มากสุด</span><span class="neg">${money(losses.length ? Math.min(...losses) : 0)}</span>
       </div>
-      <p class="note" style="margin:12px 0 0">Profit factor = กำไรรวม ÷ ขาดทุนรวม มากกว่า 1 แปลว่าระบบได้มากกว่าเสีย · Expectancy = กำไรเฉลี่ยต่อไม้ · ตัวเลขยังเชื่อไม่ได้จนกว่าจะมีราว 20 ไม้ขึ้นไป</p></div>`;
+      <p class="note" style="margin:12px 0 0">Profit factor = กำไรรวม ÷ ขาดทุนรวม มากกว่า 1 แปลว่าระบบได้มากกว่าเสีย · Expectancy = กำไรเฉลี่ยต่อไม้ · ตัวเลขยังเชื่อไม่ได้จนกว่าจะมีราว 20 ไม้ขึ้นไป</p></div>
+    ${brk('แยกตามระบบ', t => SYS[t.system])}
+    ${brk('ทำตามระบบ vs ไม่ทำ', t => t.followed === true ? 'ตามระบบ' : t.followed === false ? 'ไม่ตามระบบ' : null)}
+    ${brk('แยกตามช่วงเวลา', t => SES[t.session])}
+    ${brk('แยกตามฝั่ง', t => SIDE[t.side])}`;
   bindAcc('accSelA');
   $('#perSel').onchange = e => { anaPer = e.target.value; render(); };
 }
@@ -637,6 +850,8 @@ function renderSet() {
   const sw = (id, on) => `<label class="sw"><input type="checkbox" id="${id}"${on ? ' checked' : ''}><span></span></label>`;
   $('#v-set').innerHTML = `
     <h2 class="center" style="margin:4px 0 6px;font-size:26px">Settings</h2>
+    <div class="grp">คลาวด์</div>
+    <div class="list" id="cloudBox">${cloudHtml()}</div>
     <div class="grp">ทั่วไป</div>
     <div class="list">
       <div class="li">แสดงจำนวนไม้ในปฏิทิน ${sw('sCount', S.set.showCount)}</div>
@@ -659,7 +874,8 @@ function renderSet() {
       <label class="li" style="cursor:pointer"><span>กู้คืนจากไฟล์สำรอง<small>แทนที่ข้อมูลทั้งหมดในเครื่องนี้</small></span><span class="chev">›</span><input type="file" id="imJson" accept="application/json,.json" style="display:none"></label>
       <button class="li" id="exCsv"><span>Export CSV<small>เปิดใน Excel / Google Sheets ได้</small></span><span class="chev">›</span></button>
     </div>
-    <p class="note">ข้อมูลทั้งหมด รวมภาพชาร์ต เก็บอยู่ในเครื่องนี้เท่านั้น ไม่ได้ส่งขึ้นที่ไหน ถ้าล้างข้อมูล Safari หรือเปลี่ยนเครื่อง ข้อมูลจะหาย กดสำรองไว้เป็นระยะ · บน iPhone ให้เปิดจากไอคอนหน้าจอโฮมเสมอ เพราะ Safari กับไอคอนเก็บข้อมูลแยกกัน</p>`;
+    <p class="note">${S.cloudUser ? 'ไม้และภาพเก็บทั้งในเครื่องและบนคลาวด์ (Supabase) เปิดจากเครื่องไหนก็เห็นเหมือนกันเมื่อล็อกอินบัญชีเดียวกัน · ไม่มีเน็ตก็จดได้ ระบบจะส่งขึ้นให้เองเมื่อกลับมาออนไลน์' : 'ตอนนี้ข้อมูลอยู่ในเครื่องนี้เท่านั้น ถ้าล้างข้อมูล Safari หรือเปลี่ยนเครื่อง ข้อมูลจะหาย ล็อกอินคลาวด์ด้านบนเพื่อเก็บไว้ออนไลน์'} · บน iPhone ให้เปิดจากไอคอนหน้าจอโฮมเสมอ</p>`;
+  bindCloud();
   $('#sCount').onchange = e => { S.set.showCount = e.target.checked; save(); };
   $('#sHide').onchange = e => { S.set.hide = e.target.checked; save(); };
   $('#sWk').onchange = e => { S.set.weekends = e.target.checked; save(); };
@@ -670,6 +886,38 @@ function renderSet() {
   $('#exJson').onclick = exportJson;
   $('#imJson').onchange = importJson;
   $('#exCsv').onclick = exportCsv;
+}
+function cloudHtml() {
+  if (!sb) return '<div class="li"><span>โหลดไลบรารีคลาวด์ไม่ได้<small>ต่อเน็ตแล้วเปิดแอปใหม่</small></span></div>';
+  if (!me) return `<div class="cloud">
+      <div class="fld"><label for="cEmail">อีเมล</label><input id="cEmail" type="email" autocomplete="username" inputmode="email"></div>
+      <div class="fld"><label for="cPass">รหัสผ่าน (6 ตัวขึ้นไป)</label><input id="cPass" type="password" autocomplete="current-password"></div>
+      <div class="row2"><button class="btn" id="cIn">เข้าสู่ระบบ</button><button class="btn ghost" id="cUp">สมัครใหม่</button></div>
+      <p class="note" style="margin:10px 0 0">${S.cloudUser ? 'ออกจากระบบอยู่ ไม้ที่จดตอนนี้จะค้างในเครื่องจนกว่าจะล็อกอิน' : 'ล็อกอินครั้งแรก ไม้ที่อยู่ในเครื่องนี้จะถูกย้ายขึ้นคลาวด์ให้อัตโนมัติ'}</p></div>`;
+  const n = qLen();
+  const st = flushing ? 'กำลังส่ง…' : syncMsg ? esc(syncMsg) : n ? `รอส่ง ${n} รายการ` : lastSync ? `ตรงกันแล้ว · ${pad(lastSync.getHours())}:${pad(lastSync.getMinutes())}` : 'เชื่อมต่อแล้ว';
+  return `<div class="li"><span>${esc(me.email)}<small style="${syncMsg ? 'color:var(--gold)' : ''}">${st}</small></span></div>
+    <button class="li" id="cSync"><span>Sync ตอนนี้<small>ดึงจากคลาวด์ แล้วส่งที่ค้างขึ้นไป</small></span><span class="chev">›</span></button>
+    <button class="li" id="cOut" style="color:var(--loss)">ออกจากระบบ</button>`;
+}
+function bindCloud() {
+  const box = $('#cloudBox'); if (!box) return;
+  box.onclick = async e => {
+    const id = e.target.closest('button') && e.target.closest('button').id;
+    if (id === 'cSync') { syncMsg = ''; await pull(); toast('sync แล้ว'); }
+    else if (id === 'cOut') confirmSheet('ออกจากระบบคลาวด์? ข้อมูลในเครื่องยังอยู่', async () => { await sb.auth.signOut(); render(); });
+    else if (id === 'cIn' || id === 'cUp') {
+      const email = $('#cEmail').value.trim(), password = $('#cPass').value;
+      if (!email || password.length < 6) { toast('ใส่อีเมลและรหัสผ่าน 6 ตัวขึ้นไป'); return; }
+      e.target.disabled = true;
+      const r = id === 'cIn' ? await sb.auth.signInWithPassword({ email, password })
+        : await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+      e.target.disabled = false;
+      if (r.error) { toast(/invalid login/i.test(r.error.message) ? 'อีเมลหรือรหัสผ่านไม่ถูก' : /not confirmed/i.test(r.error.message) ? 'ยังไม่ได้ยืนยันอีเมล เปิดลิงก์ในเมลก่อน' : r.error.message); return; }
+      if (id === 'cUp' && !r.data.session) { toast('ส่งเมลยืนยันแล้ว กดลิงก์ในเมล แล้วกลับมาเข้าสู่ระบบ'); return; }
+      toast('เข้าสู่ระบบแล้ว'); render();
+    }
+  };
 }
 function accForm(id) {
   const a = id ? accOf(id) : { id: uid(), name: '', cur: 'THB' };
@@ -685,12 +933,14 @@ function accForm(id) {
     const nm = $('#aname').value.trim(); if (!nm) { toast('ตั้งชื่อบัญชีก่อน'); return; }
     a.name = nm; a.cur = $('#acur').value;
     if (!id) S.accounts.push(a);
+    addQ('a', a.id);
     save(); closeSheet(); render(); toast('บันทึกแล้ว');
   };
   const del = $('#adel');
   if (del) del.onclick = () => confirmSheet(`ลบบัญชี “${a.name}”${used ? ` และไม้ ${used} ไม้` : ''}?`, async () => {
     for (const t of S.trades.filter(t => t.acc === id)) if (t.img) await imgDel(t.id);
     S.trades = S.trades.filter(t => t.acc !== id); S.accounts = S.accounts.filter(x => x.id !== id);
+    addQ('da', id);
     if (S.acc === id) S.acc = 'all'; save(); render(); toast('ลบแล้ว');
   });
 }
@@ -714,17 +964,22 @@ async function importJson(e) {
     const data = JSON.parse(await file.text());
     if (!data.state || !Array.isArray(data.state.trades)) throw new Error('format');
     confirmSheet(`กู้คืน ${data.state.trades.length} ไม้? ข้อมูลในเครื่องนี้จะถูกแทนที่`, async () => {
-      S = Object.assign(defState(), data.state); S.set = Object.assign(defState().set, S.set);
-      for (const [id, url] of Object.entries(data.imgs || {})) { const b = await (await fetch(url)).blob(); await imgPut(id, b); }
+      const old = S;
+      S = Object.assign(defState(), data.state); S.set = Object.assign(defState().set, S.set); S.cloudUser = old.cloudUser;
+      for (const [id, url] of Object.entries(data.imgs || {})) { const b = await (await fetch(url)).blob(); await imgPut(id, b); addQ('img', id); }
+      const nt = new Set(S.trades.map(t => t.id)), na = new Set(S.accounts.map(a => a.id));
+      old.trades.forEach(t => { if (!nt.has(t.id)) addQ('dt', t.id); });
+      old.accounts.forEach(a => { if (!na.has(a.id)) addQ('da', a.id); });
+      S.accounts.forEach(a => addQ('a', a.id)); S.trades.forEach(t => addQ('t', t.id));
       save(); render(); toast('กู้คืนแล้ว');
     });
   } catch (er) { toast('ไฟล์นี้ไม่ใช่ไฟล์สำรองของ TradeCal'); }
   e.target.value = '';
 }
 function exportCsv() {
-  const rows = [['date', 'time', 'account', 'currency', 'pnl', 'note', 'lesson']];
+  const rows = [['date', 'time', 'account', 'currency', 'pnl', ...TCOLS, 'note', 'lesson']];
   [...S.trades].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-    .forEach(t => { const a = accOf(t.acc); rows.push([t.date, t.time, a.name, a.cur, t.pnl, t.note, t.lesson]); });
+    .forEach(t => { const a = accOf(t.acc); rows.push([t.date, t.time, a.name, a.cur, t.pnl, ...TCOLS.map(c => t[c]), t.note, t.lesson]); });
   const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   download(`tradecal-${todayK()}.csv`, new Blob([csv], { type: 'text/csv' }));
 }
@@ -762,7 +1017,8 @@ $('#calBody').onclick = e => {
   else if (gl) goalForm(gl.dataset.goal);
 };
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.t; if (tab !== 'cal') dayKey = null; render(); window.scrollTo(0, 0); } };
-render();
+render(); syncDot();
+$('#syncDot').onclick = () => { tab = 'set'; dayKey = null; render(); };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
