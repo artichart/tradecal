@@ -898,6 +898,7 @@ function cloudHtml() {
   const st = flushing ? 'กำลังส่ง…' : syncMsg ? esc(syncMsg) : n ? `รอส่ง ${n} รายการ` : lastSync ? `ตรงกันแล้ว · ${pad(lastSync.getHours())}:${pad(lastSync.getMinutes())}` : 'เชื่อมต่อแล้ว';
   return `<div class="li"><span>${esc(me.email)}<small style="${syncMsg ? 'color:var(--gold)' : ''}">${st}</small></span></div>
     <button class="li" id="cSync"><span>Sync ตอนนี้<small>ดึงจากคลาวด์ แล้วส่งที่ค้างขึ้นไป</small></span><span class="chev">›</span></button>
+    <button class="li" id="cPw"><span>ตั้งรหัสผ่านใหม่<small>ใช้ล็อกอินบนเครื่อง/แอปอื่น</small></span><span class="chev">›</span></button>
     <button class="li" id="cOut" style="color:var(--loss)">ออกจากระบบ</button>`;
 }
 function bindCloud() {
@@ -905,6 +906,18 @@ function bindCloud() {
   box.onclick = async e => {
     const id = e.target.closest('button') && e.target.closest('button').id;
     if (id === 'cSync') { syncMsg = ''; await pull(); toast('sync แล้ว'); }
+    else if (id === 'cPw') {
+      openSheet(`<div class="sh"><h3>ตั้งรหัสผ่านใหม่</h3><button class="x" id="px" aria-label="ปิด">×</button></div>
+        <div class="fld"><label for="pNew">รหัสผ่านใหม่ (6 ตัวขึ้นไป)</label><input id="pNew" type="text" autocomplete="new-password"></div>
+        <button class="btn" id="pOk">บันทึกรหัส</button>`);
+      $('#px').onclick = closeSheet;
+      $('#pOk').onclick = async () => {
+        const pw = $('#pNew').value; if (pw.length < 6) { toast('อย่างน้อย 6 ตัว'); return; }
+        const r = await sb.auth.updateUser({ password: pw });
+        if (r.error) { toast(r.error.message); return; }
+        closeSheet(); toast('ตั้งรหัสแล้ว ใช้ล็อกอินในแอปไอคอนได้เลย');
+      };
+    }
     else if (id === 'cOut') confirmSheet('ออกจากระบบคลาวด์? ข้อมูลในเครื่องยังอยู่', async () => { await sb.auth.signOut(); render(); });
     else if (id === 'cIn' || id === 'cUp') {
       const email = $('#cEmail').value.trim(), password = $('#cPass').value;
