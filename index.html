@@ -628,13 +628,16 @@ function confirmSheet(msg, ok) {
 
 /* ---------- ช่องวิเคราะห์ ---------- */
 const SYS = { garand: 'M1 Garand', v5: 'EMA50 V5', manual: 'นอกระบบ' };
-const SES = { asia: 'เอเชีย', eu: 'ยุโรป', ny: 'NY', other: 'อื่นๆ' };
+// ★ 5 พ.ย. 69 ต้นสั่ง "แก้ตลาดในแอป" → ช่องเลือกเหลือแค่รอบที่เทรดจริง (ลอนดอน · NY) · เช้า/12:30 ลบถาวร = นับเป็น "อื่นๆ"
+//   ไม้เก่าที่บันทึกเป็นเอเชียยังแสดงชื่อเดิมในรายงาน (คีย์ DB เดิม asia/eu/ny/other)
+const SES = { asia: 'เอเชีย', eu: 'ลอนดอน', ny: 'NY', other: 'อื่นๆ' };
+const SES_PICK = { eu: 'ลอนดอน', ny: 'NY', other: 'อื่นๆ' };
 const SIDE = { buy: 'BUY', sell: 'SELL' };
 const OUT = { tp: 'TP', sl: 'SL', manual: 'ปิดเอง', be: 'เท่าทุน' };
-// เวลาไทย: เอเชีย 08–11 · ยุโรป 12–16 · NY 19–23
+// เวลาไทย (Garand): ลอนดอน 15–17 · NY 21:30–23 → เผื่อ: 14:00–17:59 ลอนดอน · 20:00 ขึ้นไป NY · นอกนั้น อื่นๆ
 function guessSes(hhmm) {
   const h = +String(hhmm).slice(0, 2);
-  return h >= 7 && h < 12 ? 'asia' : h >= 12 && h < 17 ? 'eu' : h >= 19 ? 'ny' : 'other';
+  return h >= 14 && h < 18 ? 'eu' : h >= 20 ? 'ny' : 'other';
 }
 const opts = (map, v) => `<option value="">—</option>` + Object.entries(map).map(([k, l]) => `<option value="${k}"${v === k ? ' selected' : ''}>${l}</option>`).join('');
 function tagLine(t) {
@@ -668,7 +671,7 @@ function tradeForm(t) {
     <div class="sub">สำหรับวิเคราะห์ (ไม่ใส่ก็ได้)</div>
     <div class="f2">
       <div class="fld"><label for="fsys">ระบบ</label><select id="fsys">${opts(SYS, f.system)}</select></div>
-      <div class="fld"><label for="fses">ช่วงเวลา</label><select id="fses">${opts(SES, f.session)}</select></div>
+      <div class="fld"><label for="fses">ช่วงเวลา</label><select id="fses">${opts(f.session === 'asia' ? SES : SES_PICK, f.session)}</select></div>
     </div>
     <div class="f2">
       <div class="fld"><label for="fside">ฝั่ง</label><select id="fside">${opts(SIDE, f.side)}</select></div>
