@@ -176,8 +176,9 @@ svg text{fill:var(--mute);font-size:10px}
 .fld textarea{min-height:70px;resize:vertical}
 .pick{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--accent);font-weight:600;padding:12px;border:1.5px dashed var(--line);border-radius:12px;margin-bottom:16px}
 .pick input{display:none}
-.prev{position:relative;margin-bottom:16px}
-.prev img{width:100%;border-radius:12px;max-height:220px;object-fit:cover;display:block}
+.prevs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.prev{position:relative}
+.prev img{width:100%;border-radius:12px;height:110px;object-fit:cover;display:block}
 .prev button{position:absolute;top:6px;right:6px;border:0;background:rgba(0,0,0,.65);border-radius:50%;width:32px;height:32px}
 .full{position:fixed;inset:0;background:#000;z-index:30;display:none;align-items:center;justify-content:center}
 .full.on{display:flex}
@@ -269,7 +270,7 @@ function idb() {
   });
   return dbp;
 }
-async function imgPut(id, blob) { const d = await idb(); return new Promise((res, rej) => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').put(blob, id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function imgPut(id, blob) { imgMiss.delete(id); const d = await idb(); return new Promise((res, rej) => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').put(blob, id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
 async function imgLocal(id) { const d = await idb(); return new Promise(res => { const q = d.transaction('img').objectStore('img').get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); }
 // เครื่องนี้ไม่มีภาพ (เช่นเปิดจากเครื่องใหม่) → โหลดจากคลาวด์แล้วเก็บไว้
 async function imgGet(id) {
@@ -278,7 +279,22 @@ async function imgGet(id) {
   if (r.error || !r.data) return null;
   imgPut(id, r.data).catch(() => {}); return r.data;
 }
-async function imgDel(id) { const d = await idb(); addQ('dimg', id); return new Promise(res => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').delete(id); t.oncomplete = res; t.onerror = res; }); }
+// ★ 6 พ.ย. 69 ต้นขอ "เพิ่มรูปได้ซัก 3 รูป" → ช่อง 0 = <id> (เหมือนเดิม · ไม้เก่าใช้ได้) · ช่อง 1–2 = <id>_1 · <id>_2
+//   คลาวด์ยังเก็บ img = true/false อย่างเดียว (ไม่ต้องแก้ schema) · เครื่องใหม่ลองโหลดครบ 3 ช่อง · ช่องที่ไม่มีจำไว้ไม่ถามซ้ำ
+const IMGN = 3;
+const slotKey = (id, i) => i ? `${id}_${i}` : id;
+const imgMiss = new Set();
+async function imgsGet(id) {
+  const out = [];
+  for (let i = 0; i < IMGN; i++) {
+    const k = slotKey(id, i);
+    if (imgMiss.has(k)) { out.push(null); continue; }
+    const b = await imgGet(k); if (!b) imgMiss.add(k); out.push(b);
+  }
+  return out;
+}
+async function imgDelAll(id) { for (let i = 0; i < IMGN; i++) await imgDel(slotKey(id, i)); }
+async function imgDel(id) { imgMiss.add(id); const d = await idb(); addQ('dimg', id); return new Promise(res => { const t = d.transaction('img', 'readwrite'); t.objectStore('img').delete(id); t.oncomplete = res; t.onerror = res; }); }
 function shrink(file) {
   return new Promise((res, rej) => {
     const im = new Image(); const u = URL.createObjectURL(file);
@@ -378,7 +394,7 @@ async function pull() {
       const m = new Map(cloud.map(x => [x.id, x]));
       for (const x of local) if (first || Q[qk].includes(x.id)) {
         m.set(x.id, x);
-        if (first) { addQ(qk, x.id); if (x.img) addQ('img', x.id); }
+        if (first) { addQ(qk, x.id); if (x.img) for (let i = 0; i < IMGN; i++) addQ('img', slotKey(x.id, i)); }
       }
       for (const id of Q[dq]) m.delete(id);
       return [...m.values()];
@@ -593,20 +609,20 @@ async function renderDay() {
       ${t.note ? `<div class="txt"><b>โน้ต:</b> ${esc(t.note)}</div>` : ''}
       ${t.lesson ? `<div class="txt"><b>บทเรียน:</b> ${esc(t.lesson)}</div>` : ''}`;
     box.appendChild(div);
-    if (t.img) imgGet(t.id).then(b => { if (b) { const im = document.createElement('img'); im.src = URL.createObjectURL(b); im.alt = 'ภาพไม้'; im.onclick = () => showFull(im.src); div.appendChild(im); } });
+    if (t.img) imgsGet(t.id).then(bs => { for (const b of bs) if (b) { const im = document.createElement('img'); im.src = URL.createObjectURL(b); im.alt = 'ภาพไม้'; im.onclick = () => showFull(im.src); div.appendChild(im); } });
   }
   $('#dayBack').onclick = () => { dayKey = null; render(); };
   $('#addTr').onclick = () => tradeForm(null);
   const clr = $('#dayClear');
   if (clr) clr.onclick = () => confirmSheet(`ลบไม้ทั้ง ${list.length} ไม้ของวันนี้?`, async () => {
-    for (const t of list) { if (t.img) await imgDel(t.id); addQ('dt', t.id); }
+    for (const t of list) { if (t.img) await imgDelAll(t.id); addQ('dt', t.id); }
     const ids = new Set(list.map(t => t.id)); S.trades = S.trades.filter(t => !ids.has(t.id)); save(); render(); toast('ลบแล้ว');
   });
   box.onclick = e => {
     const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
     if (ed) tradeForm(S.trades.find(t => t.id === ed.dataset.edit));
     if (dl) confirmSheet('ลบไม้นี้?', async () => {
-      const t = S.trades.find(x => x.id === dl.dataset.del); if (t && t.img) await imgDel(t.id);
+      const t = S.trades.find(x => x.id === dl.dataset.del); if (t && t.img) await imgDelAll(t.id);
       addQ('dt', dl.dataset.del);
       S.trades = S.trades.filter(x => x.id !== dl.dataset.del); save(); render(); toast('ลบแล้ว');
     });
@@ -627,14 +643,15 @@ function confirmSheet(msg, ok) {
 }
 
 /* ---------- ช่องวิเคราะห์ ---------- */
-const SYS = { garand: 'M1 Garand', v5: 'EMA50 V5', manual: 'นอกระบบ' };
+// ★ 6 พ.ย. 69 ต้นสั่ง "แก้ชื่อระบบ" → M1 Garand เปลี่ยนชื่อเป็น Eagle Pond (คีย์ DB ยังเป็น garand · ไม้เก่าขึ้นชื่อใหม่ด้วย)
+const SYS = { garand: '🦅 Eagle Pond', v5: 'EMA50 V5', manual: 'นอกระบบ' };
 // ★ 5 พ.ย. 69 ต้นสั่ง "แก้ตลาดในแอป" → ช่องเลือกเหลือแค่รอบที่เทรดจริง (ลอนดอน · NY) · เช้า/12:30 ลบถาวร = นับเป็น "อื่นๆ"
 //   ไม้เก่าที่บันทึกเป็นเอเชียยังแสดงชื่อเดิมในรายงาน (คีย์ DB เดิม asia/eu/ny/other)
 const SES = { asia: 'เอเชีย', eu: 'ลอนดอน', ny: 'NY', other: 'อื่นๆ' };
 const SES_PICK = { eu: 'ลอนดอน', ny: 'NY', other: 'อื่นๆ' };
 const SIDE = { buy: 'BUY', sell: 'SELL' };
 const OUT = { tp: 'TP', sl: 'SL', manual: 'ปิดเอง', be: 'เท่าทุน' };
-// เวลาไทย (Garand): ลอนดอน 15–17 · NY 21:30–23 → เผื่อ: 14:00–17:59 ลอนดอน · 20:00 ขึ้นไป NY · นอกนั้น อื่นๆ
+// เวลาไทย (Eagle Pond): ลอนดอน 14:50–17 · NY 21:30–23 → เผื่อ: 14:00–17:59 ลอนดอน · 20:00 ขึ้นไป NY · นอกนั้น อื่นๆ
 function guessSes(hhmm) {
   const h = +String(hhmm).slice(0, 2);
   return h >= 14 && h < 18 ? 'eu' : h >= 20 ? 'ny' : 'other';
@@ -656,7 +673,7 @@ function tradeForm(t) {
   const num = v => v ?? '';
   const fol = f.followed === true ? 'y' : f.followed === false ? 'n' : '';
   let side = t ? (t.pnl < 0 ? 'l' : 'p') : 'p';
-  let newBlob = null, dropImg = false;
+  const slots = Array(IMGN).fill(null), dirty = Array(IMGN).fill(false);   // ภาพในแต่ละช่อง · dirty = แก้ในฟอร์มนี้
   const d = parse(f.date);
   openSheet(`<div class="sh"><h3>${isNew ? 'ไม้ใหม่' : 'แก้ไม้'} · ${d.getDate()} ${MON3[d.getMonth()]} ${d.getFullYear()}</h3><button class="x" id="fx" aria-label="ปิด">×</button></div>
     <div class="pl"><button class="p" id="sp">กำไร</button><button class="l" id="sl">ขาดทุน</button></div>
@@ -692,7 +709,7 @@ function tradeForm(t) {
     <div class="fld"><label for="fnote">โน้ต (ไม่ใส่ก็ได้)</label><textarea id="fnote" placeholder="เช่น 🦅 SELL รอบคืน · 0.05 lot">${esc(f.note)}</textarea></div>
     <div class="fld"><label for="fles">บทเรียน (ไม่ใส่ก็ได้)</label><textarea id="fles" placeholder="ได้อะไรจากไม้นี้">${esc(f.lesson)}</textarea></div>
     <div id="fprev"></div>
-    <label class="pick" id="fpick">＋ แนบภาพชาร์ต / ใบ MT4<input type="file" accept="image/*" id="ffile"></label>
+    <label class="pick" id="fpick">＋ แนบภาพชาร์ต / ใบ MT4 <span class="mute" id="fcnt"></span><input type="file" accept="image/*" multiple id="ffile"></label>
     <button class="btn" id="fsave">บันทึกไม้</button>`);
   const setSide = s => { side = s; $('#sp').classList.toggle('on', s === 'p'); $('#sl').classList.toggle('on', s === 'l'); };
   const setCur = () => { $('#fcur').textContent = accOf($('#facc').value).cur === 'THB' ? 'บาท' : 'USD'; };
@@ -701,16 +718,22 @@ function tradeForm(t) {
   $('#facc').onchange = setCur;
   if (isNew) $('#ftime').onchange = e => { $('#fses').value = guessSes(e.target.value); };
   $('#fx').onclick = closeSheet;
-  const showPrev = src => {
-    $('#fprev').innerHTML = src ? `<div class="prev"><img src="${src}" alt="ภาพที่แนบ"><button id="frm" aria-label="เอาภาพออก">✕</button></div>` : '';
-    $('#fpick').style.display = src ? 'none' : '';
-    if (src) $('#frm').onclick = () => { newBlob = null; dropImg = true; showPrev(null); };
+  const showPrev = () => {
+    const n = slots.filter(Boolean).length;
+    $('#fprev').innerHTML = n ? `<div class="prevs">${slots.map((b, i) => b ? `<div class="prev"><img src="${URL.createObjectURL(b)}" alt="ภาพที่แนบ ${i + 1}"><button data-rm="${i}" aria-label="เอาภาพ ${i + 1} ออก">✕</button></div>` : '').join('')}</div>` : '';
+    $('#fpick').style.display = n >= IMGN ? 'none' : '';
+    $('#fcnt').textContent = `(${n}/${IMGN})`;
+    $('#fprev').querySelectorAll('[data-rm]').forEach(bt => bt.onclick = () => { const i = +bt.dataset.rm; slots[i] = null; dirty[i] = true; showPrev(); });
   };
-  if (f.img) imgGet(f.id).then(b => { if (b && !newBlob && !dropImg) showPrev(URL.createObjectURL(b)); });
+  showPrev();
+  if (f.img) imgsGet(f.id).then(bs => { bs.forEach((b, i) => { if (b && !dirty[i]) slots[i] = b; }); showPrev(); });
   $('#ffile').onchange = async e => {
-    const file = e.target.files[0]; if (!file) return;
-    try { newBlob = await shrink(file); dropImg = false; showPrev(URL.createObjectURL(newBlob)); }
-    catch (er) { toast('เปิดภาพนี้ไม่ได้ ลองไฟล์ JPG/PNG'); }
+    for (const file of [...e.target.files]) {
+      const i = slots.findIndex(b => !b); if (i < 0) { toast(`แนบได้สูงสุด ${IMGN} ภาพ`); break; }
+      try { slots[i] = await shrink(file); dirty[i] = true; }
+      catch (er) { toast('เปิดภาพนี้ไม่ได้ ลองไฟล์ JPG/PNG'); }
+    }
+    e.target.value = ''; showPrev();
   };
   $('#fsave').onclick = async () => {
     const amt = parseFloat($('#famt').value);
@@ -725,9 +748,12 @@ function tradeForm(t) {
     const fv = $('#ffol').value; if (fv) f.followed = fv === 'y'; else delete f.followed;
     if (f.system) S.lastSys = f.system;
     try {
-      if (newBlob) { await imgPut(f.id, newBlob); f.img = true; addQ('img', f.id); }
-      else if (dropImg) { await imgDel(f.id); f.img = false; }
-    } catch (er) { toast('เก็บภาพไม่ได้ บันทึกไม้โดยไม่มีภาพ'); f.img = false; }
+      for (let i = 0; i < IMGN; i++) if (dirty[i]) {
+        const k = slotKey(f.id, i);
+        if (slots[i]) { await imgPut(k, slots[i]); addQ('img', k); } else await imgDel(k);
+      }
+      f.img = slots.some(Boolean);
+    } catch (er) { toast('เก็บภาพบางภาพไม่ได้'); f.img = slots.some(Boolean); }
     addQ('t', f.id);
     if (isNew) S.trades.push(f); else S.trades = S.trades.map(x => x.id === f.id ? f : x);
     if (S.acc !== 'all' && S.acc !== f.acc) S.acc = 'all';
@@ -954,7 +980,7 @@ function accForm(id) {
   };
   const del = $('#adel');
   if (del) del.onclick = () => confirmSheet(`ลบบัญชี “${a.name}”${used ? ` และไม้ ${used} ไม้` : ''}?`, async () => {
-    for (const t of S.trades.filter(t => t.acc === id)) if (t.img) await imgDel(t.id);
+    for (const t of S.trades.filter(t => t.acc === id)) if (t.img) await imgDelAll(t.id);
     S.trades = S.trades.filter(t => t.acc !== id); S.accounts = S.accounts.filter(x => x.id !== id);
     addQ('da', id);
     if (S.acc === id) S.acc = 'all'; save(); render(); toast('ลบแล้ว');
@@ -971,7 +997,7 @@ function download(name, blob) {
 const blobToData = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
 async function exportJson() {
   const imgs = {};
-  for (const t of S.trades) if (t.img) { const b = await imgGet(t.id); if (b) imgs[t.id] = await blobToData(b); }
+  for (const t of S.trades) if (t.img) { const bs = await imgsGet(t.id); for (let i = 0; i < IMGN; i++) if (bs[i]) imgs[slotKey(t.id, i)] = await blobToData(bs[i]); }
   download(`tradecal-${todayK()}.json`, new Blob([JSON.stringify({ app: 'tradecal', v: 1, state: S, imgs })], { type: 'application/json' }));
 }
 async function importJson(e) {
