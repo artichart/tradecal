@@ -68,3 +68,8 @@ drop policy if exists charts_own on storage.objects;
 create policy charts_own on storage.objects for all to authenticated
   using (bucket_id = 'charts' and (storage.foldername(name))[1] = auth.uid()::text)
   with check (bucket_id = 'charts' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------- ★ 9 พ.ย. 69 บันทึกอารมณ์ ก่อน/ระหว่าง/หลังเข้าไม้ (รันซ้ำได้) ----------
+alter table public.trades add column if not exists feel_before text default '';
+alter table public.trades add column if not exists feel_during text default '';
+alter table public.trades add column if not exists feel_after  text default '';

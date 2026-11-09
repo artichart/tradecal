@@ -174,6 +174,7 @@ svg text{fill:var(--mute);font-size:10px}
 .fld label{display:block;color:var(--mute);font-size:13px;margin-bottom:6px}
 .fld input,.fld textarea,.fld select{width:100%;background:var(--card2);border:0;border-radius:12px;padding:13px;font-size:16px}
 .fld textarea{min-height:70px;resize:vertical}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 8px}.chips button{font:inherit;font-size:13px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mute)}
 .pick{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--accent);font-weight:600;padding:12px;border:1.5px dashed var(--line);border-radius:12px;margin-bottom:16px}
 .pick input{display:none}
 .prevs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
@@ -329,15 +330,25 @@ function addQ(k, id) {
 }
 const qLen = () => Q.t.length + Q.a.length + Q.dt.length + Q.da.length + Q.img.length + Q.dimg.length + (Q.p ? 1 : 0);
 
+// ★ 9 พ.ย. 69 ต้นขอ "เพิ่มบันทึกอารมณ์ ก่อน/ระหว่าง/หลังเข้า order" · ปุ่มคำสั้นกดเติมได้ จดเร็วกว่าพิมพ์
+const FEELQ = [
+  ['feel_before', 'ก่อนเข้า รู้สึกยังไง', 'เช่น นิ่ง รอสัญญาณครบ / ใจร้อน กลัวตกรถ', 'ก่อนเข้า'],
+  ['feel_during', 'ระหว่างถือไม้ รู้สึกยังไง', 'เช่น เฝ้าจอทุกแท่ง / อยากขยับ SL', 'ระหว่างถือ'],
+  ['feel_after', 'หลังจบไม้ รู้สึกยังไง', 'เช่น โล่ง พอแล้ววันนี้ / อยากเอาคืน', 'หลังจบ']];
+const FEELW = ['😌 นิ่ง', '😬 ตื่นเต้น', '😨 กลัว', '⚡ ใจร้อน', '🤑 โลภ', '😤 อยากเอาคืน', '😴 เบื่อ', '🙂 พอใจ'];
 const TCOLS = ['system', 'session', 'side', 'lot', 'entry', 'sl', 'tp', 'outcome', 'followed', 'balance_before'];
+const FEEL = ['feel_before', 'feel_during', 'feel_after'];
+let noFeelCol = false;   // ฐานข้อมูลยังไม่มีคอลัมน์อารมณ์ (ยังไม่ได้รัน schema.sql ใหม่) → ส่งขึ้นโดยไม่มีช่องนี้ ข้อความยังอยู่ในเครื่อง
 const toRow = t => {
   const r = { user_id: me.id, id: t.id, acc: t.acc, date: t.date, time: t.time, pnl: t.pnl, note: t.note || '', lesson: t.lesson || '', img: !!t.img, updated_at: new Date().toISOString() };
   for (const c of TCOLS) r[c] = t[c] ?? null;
+  if (!noFeelCol) for (const c of FEEL) r[c] = t[c] || '';
   return r;
 };
 const fromRow = r => {
   const t = { id: r.id, acc: r.acc, date: r.date, time: r.time || '', pnl: +r.pnl, note: r.note || '', lesson: r.lesson || '', img: r.img };
   for (const c of TCOLS) if (r[c] !== null) t[c] = ['lot', 'entry', 'sl', 'tp', 'balance_before'].includes(c) ? +r[c] : r[c];
+  for (const c of FEEL) if (r[c]) t[c] = r[c];
   return t;
 };
 const ok = async p => { const r = await p; if (r.error) throw r.error; return r; };
@@ -360,7 +371,11 @@ async function flush() {
     taken('a', ids);
     ids = Q.t.slice();
     const rows = S.trades.filter(t => ids.includes(t.id)).map(toRow);
-    if (rows.length) await ok(sb.from('trades').upsert(rows));
+    if (rows.length) {
+      let r = await sb.from('trades').upsert(rows);
+      if (r.error && /feel_/.test(r.error.message || '')) { noFeelCol = true; r = await sb.from('trades').upsert(S.trades.filter(t => ids.includes(t.id)).map(toRow)); }
+      if (r.error) throw r.error;
+    }
     taken('t', ids);
     for (const id of Q.img.slice()) {
       const b = await imgLocal(id);
@@ -462,7 +477,7 @@ function dayMap() {
   const m = {};
   for (const t of visTrades()) {
     const e = m[t.date] || (m[t.date] = { v: 0, n: 0, note: false });
-    e.v += tVal(t); e.n++; if (t.note || t.lesson) e.note = true;
+    e.v += tVal(t); e.n++; if (t.note || t.lesson || t.feel_before || t.feel_during || t.feel_after) e.note = true;
   }
   return m;
 }
@@ -607,6 +622,7 @@ async function renderDay() {
       <div class="amt num ${cls(val)}">${money(val, { sign: true })}${a.cur !== S.set.disp && !S.set.hide ? ` <span class="mute" style="font-size:13px;font-weight:500">(${a.cur === 'THB' ? '฿' : '$'}${Math.abs(t.pnl).toLocaleString()})</span>` : ''}</div>
       ${tagLine(t)}
       ${t.note ? `<div class="txt"><b>โน้ต:</b> ${esc(t.note)}</div>` : ''}
+      ${FEELQ.filter(([k]) => t[k]).map(([k, , , short]) => `<div class="txt"><b>${short}:</b> ${esc(t[k])}</div>`).join('')}
       ${t.lesson ? `<div class="txt"><b>บทเรียน:</b> ${esc(t.lesson)}</div>` : ''}`;
     box.appendChild(div);
     if (t.img) imgsGet(t.id).then(bs => { for (const b of bs) if (b) { const im = document.createElement('img'); im.src = URL.createObjectURL(b); im.alt = 'ภาพไม้'; im.onclick = () => showFull(im.src); div.appendChild(im); } });
@@ -707,6 +723,8 @@ function tradeForm(t) {
       <div class="fld"><label for="fbal">พอร์ตก่อนเข้า</label><input id="fbal" type="number" inputmode="decimal" step="any" min="0" value="${num(f.balance_before)}"></div>
     </div>
     <div class="fld"><label for="fnote">โน้ต (ไม่ใส่ก็ได้)</label><textarea id="fnote" placeholder="เช่น 🦅 SELL รอบคืน · 0.05 lot">${esc(f.note)}</textarea></div>
+    ${FEELQ.map(([k, lab, ph]) => `<div class="fld"><label for="f_${k}">${lab}</label><textarea id="f_${k}" rows="2" placeholder="${ph}">${esc(f[k] || '')}</textarea>
+      <div class="chips" data-for="f_${k}">${FEELW.map(w => `<button type="button">${w}</button>`).join('')}</div></div>`).join('')}
     <div class="fld"><label for="fles">บทเรียน (ไม่ใส่ก็ได้)</label><textarea id="fles" placeholder="ได้อะไรจากไม้นี้">${esc(f.lesson)}</textarea></div>
     <div id="fprev"></div>
     <label class="pick" id="fpick">＋ แนบภาพชาร์ต / ใบ MT4 <span class="mute" id="fcnt"></span><input type="file" accept="image/*" multiple id="ffile"></label>
@@ -718,6 +736,9 @@ function tradeForm(t) {
   $('#facc').onchange = setCur;
   if (isNew) $('#ftime').onchange = e => { $('#fses').value = guessSes(e.target.value); };
   $('#fx').onclick = closeSheet;
+  document.querySelectorAll('.chips').forEach(c => c.querySelectorAll('button').forEach(b => b.onclick = () => {
+    const ta = $('#' + c.dataset.for); ta.value = ta.value.trim() ? ta.value.trim() + ' · ' + b.textContent : b.textContent;
+  }));
   const showPrev = () => {
     const n = slots.filter(Boolean).length;
     $('#fprev').innerHTML = n ? `<div class="prevs">${slots.map((b, i) => b ? `<div class="prev"><img src="${URL.createObjectURL(b)}" alt="ภาพที่แนบ ${i + 1}"><button data-rm="${i}" aria-label="เอาภาพ ${i + 1} ออก">✕</button></div>` : '').join('')}</div>` : '';
@@ -741,6 +762,7 @@ function tradeForm(t) {
     f.pnl = side === 'l' ? -amt : amt;
     f.time = $('#ftime').value || f.time; f.acc = $('#facc').value; f.date = $('#fdate').value || f.date;
     f.note = $('#fnote').value.trim(); f.lesson = $('#fles').value.trim();
+    for (const [k] of FEELQ) { const v = $('#f_' + k).value.trim(); if (v) f[k] = v; else delete f[k]; }
     const sel = (id, k) => { const v = $(id).value; if (v) f[k] = v; else delete f[k]; };
     const nv = (id, k) => { const v = parseFloat($(id).value); if (isNaN(v)) delete f[k]; else f[k] = v; };
     sel('#fsys', 'system'); sel('#fses', 'session'); sel('#fside', 'side'); sel('#fout', 'outcome');
@@ -1019,9 +1041,9 @@ async function importJson(e) {
   e.target.value = '';
 }
 function exportCsv() {
-  const rows = [['date', 'time', 'account', 'currency', 'pnl', ...TCOLS, 'note', 'lesson']];
+  const rows = [['date', 'time', 'account', 'currency', 'pnl', ...TCOLS, 'note', ...FEEL, 'lesson']];
   [...S.trades].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-    .forEach(t => { const a = accOf(t.acc); rows.push([t.date, t.time, a.name, a.cur, t.pnl, ...TCOLS.map(c => t[c]), t.note, t.lesson]); });
+    .forEach(t => { const a = accOf(t.acc); rows.push([t.date, t.time, a.name, a.cur, t.pnl, ...TCOLS.map(c => t[c]), t.note, ...FEEL.map(c => t[c] || ''), t.lesson]); });
   const csv = '﻿' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   download(`tradecal-${todayK()}.csv`, new Blob([csv], { type: 'text/csv' }));
 }
