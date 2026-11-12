@@ -7,16 +7,16 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TradeCal">
-<meta name="theme-color" content="#07090f">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>TradeCal</title>
 <style>
 :root{
-  --bg:#07090f; --card:#121826; --card2:#1a2234; --line:#263049;
+  --bg:#000000; --card:#121a2b; --card2:#1a2234; --line:#263049;
   --text:#eef2fa; --mute:#8a93ab; --dim:#4a5370;
-  --win:#33c27a; --winbg:#1d5a3c; --loss:#ff5a5f; --lossbg:#7a2328;
-  --accent:#4fd1c5; --gold:#f5c35b;
+  --win:#3ddc84; --winbg:#1a6b35; --loss:#ff5a5f; --lossbg:#9b1c1c;
+  --accent:#2cc4e6; --gold:#f5c35b;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;overflow-x:hidden;background:var(--bg);color:var(--text);
@@ -40,9 +40,9 @@ input,textarea,select{font:inherit;color:var(--text);-webkit-user-select:text;us
 .cur button.on{background:var(--win);color:#04130b}
 
 /* segmented */
-.seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#13241b;border-radius:14px;padding:4px;margin-bottom:14px}
-.seg button{border:0;background:none;padding:10px 0;border-radius:11px;font-weight:600;color:#9fb3a8;font-size:15px}
-.seg button.on{background:#6fdc8c;color:#07210f}
+.seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#173320;border-radius:14px;padding:4px;margin-bottom:14px}
+.seg button{border:0;background:none;padding:10px 0;border-radius:11px;font-weight:600;color:#a8b8ae;font-size:15px}
+.seg button.on{background:#3ddc84;color:#04210f}
 
 .nav{display:flex;align-items:center;justify-content:space-between;margin:6px 4px 14px}
 .nav button{border:0;background:none;font-size:24px;width:40px;height:36px;color:var(--text)}
@@ -71,8 +71,8 @@ select.pill{appearance:none;-webkit-appearance:none;background:none;border:0;col
 .cell.w{background:var(--winbg)}
 .cell.l{background:var(--lossbg)}
 .cell.today{border-color:#e8ecf5}
-.cell .d{font-size:14px;color:#c9d0e0;display:flex;gap:3px;align-items:center}
-.cell .v{font-size:14px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;max-width:100%}
+.cell .d{font-size:14px;color:#fff;display:flex;gap:3px;align-items:center}
+.cell .v{font-size:14px;font-weight:700;color:#fff;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;max-width:100%}
 .cell .n{font-size:10px;color:#cfe;opacity:.75}
 .g7 .cell .v{font-size:11px}
 
@@ -152,7 +152,7 @@ svg text{fill:var(--mute);font-size:10px}
 
 /* bottom tab bar */
 .tabs{position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
-  background:#151a1f;padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:5}
+  background:#16191d;padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:5}
 .tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--mute);font-size:13px;padding:6px 0;border-radius:16px}
 .tabs button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .tabs button.on{color:#fff}
