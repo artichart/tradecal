@@ -20,7 +20,7 @@ create table if not exists public.trades (
   time      text,
   pnl       numeric(12,2) not null,
   -- ฟิลด์วิเคราะห์ (ไม่ใส่ก็ได้)
-  system    text check (system in ('garand','v5','manual')),
+  system    text check (system in ('garand','v5','manual','surf','trap')),
   session   text check (session in ('asia','eu','ny','other')),
   side      text check (side in ('buy','sell')),
   lot       numeric(6,2),
@@ -73,3 +73,7 @@ create policy charts_own on storage.objects for all to authenticated
 alter table public.trades add column if not exists feel_before text default '';
 alter table public.trades add column if not exists feel_during text default '';
 alter table public.trades add column if not exists feel_after  text default '';
+
+-- ★ 13 พ.ย. 69 เพิ่มระบบ BTG (surf/trap) — ตารางที่สร้างไปแล้วต้องรันคู่นี้ใน SQL Editor:
+-- alter table public.trades drop constraint if exists trades_system_check;
+-- alter table public.trades add constraint trades_system_check check (system in ('garand','v5','manual','surf','trap'));
